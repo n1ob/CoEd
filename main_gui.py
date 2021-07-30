@@ -18,6 +18,7 @@ XpConf.topics.add('lay')
 XpConf.topics.add('rad')
 XpConf.topics.add('coin')
 XpConf.topics.add('hv')
+XpConf.topics.add('flow')
 
 
 @flow
@@ -74,10 +75,21 @@ class FixItGui(QWidget):
         self.tab_coin = QWidget()
         self.tab_rad = QWidget()
         self.tab_hv = QWidget()
+        self.tab_xy = QWidget()
         self.tabs.addTab(self.tab_cons, "Cons")
         self.tabs.addTab(self.tab_coin, "Coin")
         self.tabs.addTab(self.tab_hv, "H/V")
         self.tabs.addTab(self.tab_rad, "Rad")
+        self.tabs.addTab(self.tab_xy, "X/Y")
+        # -----------------------------------------------------
+        self.xy_grp_box = QGroupBox()
+        self.xy_grp_box.setTitle(u"X/Y Distance")
+        self.xy_p_btn = QPushButton()
+        self.xy_p_btn.clicked.connect(self.xy_create)
+        self.xy_p_btn.setText(u"Create")
+        self.xy_tbl_wid = self.xy_prep_table(self.xy_grp_box)
+        self.xy_h_spacer = QSpacerItem(10, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.tab_xy.setLayout(self.xy_lay_get())
         # -----------------------------------------------------
         self.rad_chk_box = QCheckBox()
         self.rad_chk_box.stateChanged.connect(self.rad_state_chg)
@@ -147,103 +159,103 @@ class FixItGui(QWidget):
         sb.valueChanged.connect(func)
         return sb
 
+    # @flow
+    # def xy_lay_get2(self):
+    #     h_lay1 = self.lay_get(QHBoxLayout(), [self.xy_h_spacer, self.xy_p_btn])
+    #     v_lay2 = self.lay_get(QVBoxLayout(self.xy_grp_box), [h_lay1, self.xy_tbl_wid])
+    #     v_lay1 = self.lay_get(QVBoxLayout(), [self.xy_grp_box, v_lay2])
+    #     return v_lay1
+    #
+    # def rad_lay_get2(self):
+    #     h_lay1 = self.lay_get(QHBoxLayout(), [self.rad_chk_box, self.rad_dbl_sp_box, self.rad_h_spacer, self.rad_p_btn])
+    #     v_lay2 = self.lay_get(QVBoxLayout(self.rad_grp_box), [h_lay1, self.rad_tbl_wid])
+    #     v_lay1 = self.lay_get(QVBoxLayout(), [self.rad_grp_box, v_lay2])
+    #     return v_lay1
+    #
+    # def hv_lay_get2(self):
+    #     h_lay1 = self.lay_get(QHBoxLayout(), [self.hv_lbl, self.hv_dbl_sp_box, self.hv_h_spacer, self.hv_p_btn])
+    #     v_lay2 = self.lay_get(QVBoxLayout(self.hv_grp_box), [h_lay1, self.hv_tbl_wid])
+    #     v_lay1 = self.lay_get(QVBoxLayout(), [self.hv_grp_box, v_lay2])
+    #     return v_lay1
+    #
+    # def coin_lay_get2(self):
+    #     h_lay1 = self.lay_get(QHBoxLayout(), [self.coin_lbl, self.coin_dbl_sp_box, self.coin_h_spacer, self.coin_p_btn])
+    #     v_lay2 = self.lay_get(QVBoxLayout(self.coin_grp_box), [h_lay1, self.coin_tbl_wid])
+    #     v_lay1 = self.lay_get(QVBoxLayout(), [self.coin_grp_box, v_lay2])
+    #     return v_lay1
+    #
+    # def cons_lay_get2(self):
+    #     h_lay1 = self.lay_get(QHBoxLayout(), [self.cons_lbl_con, self.cons_cmb_box, self.cons_h_spacer, self.cons_p_btn])
+    #     v_lay2 = self.lay_get(QVBoxLayout(self.cons_grp_box), [h_lay1, self.cons_tbl_wid])
+    #     v_lay1 = self.lay_get(QVBoxLayout(), [self.cons_grp_box, v_lay2])
+    #     return v_lay1
+    #
+    # def lay_get(self, lay: QBoxLayout, obj_list: List):
+    #     for obj in obj_list:
+    #         xp(type(obj), **_lay.kw())
+    #         if isinstance(obj, QCheckBox) or isinstance(obj, QLabel):
+    #             lay.addWidget(obj, 0, Qt.AlignLeft)
+    #         elif isinstance(obj, QPushButton) or isinstance(obj, QDoubleSpinBox) or isinstance(obj, QTableWidget) \
+    #                 or isinstance(obj, QGroupBox) or isinstance(obj, QComboBox):
+    #             lay.addWidget(obj)
+    #         elif isinstance(obj, QSpacerItem):
+    #             lay.addSpacerItem(obj)
+    #         elif isinstance(obj, QBoxLayout):
+    #             lay.addLayout(obj)
+    #     return lay
+
+    def xy_lay_get(self):
+        lis = [self.xy_h_spacer, self.xy_p_btn,
+               QVBoxLayout(self.xy_grp_box), self.xy_tbl_wid,
+               QVBoxLayout(), self.xy_grp_box]
+        return self.lay_get(QHBoxLayout(), lis)
+
     def rad_lay_get(self):
-        h_lay1 = self.lay_get(QHBoxLayout(self.rad_grp_box), [self.rad_chk_box, self.rad_dbl_sp_box, self.rad_h_spacer, self.rad_p_btn])
-        v_lay2 = self.lay_get(QVBoxLayout(self.rad_grp_box), [h_lay1, self.rad_tbl_wid])
-        v_lay1 = self.lay_get(QVBoxLayout(), [self.rad_grp_box, v_lay2])
-        return v_lay1
+        lis = [self.rad_chk_box, self.rad_dbl_sp_box, self.rad_h_spacer, self.rad_p_btn,
+               QVBoxLayout(self.rad_grp_box), self.rad_tbl_wid,
+               QVBoxLayout(), self.rad_grp_box]
+        return self.lay_get(QHBoxLayout(), lis)
 
-    def rad_lay_get2(self):
-        v_lay1 = QVBoxLayout()
-        v_lay1.addWidget(self.rad_grp_box)
-        v_lay2 = QVBoxLayout(self.rad_grp_box)
-        h_lay1 = QHBoxLayout(self.rad_grp_box)
-        h_lay1.addWidget(self.rad_chk_box, 0, Qt.AlignLeft)
-        h_lay1.addWidget(self.rad_dbl_sp_box)
-        h_lay1.addSpacerItem(self.rad_h_spacer)
-        h_lay1.addWidget(self.rad_p_btn)
-        v_lay2.addLayout(h_lay1)
-        v_lay2.addWidget(self.rad_tbl_wid)
-        v_lay1.addLayout(v_lay2)
-        return v_lay1
+    def hv_lay_get(self):
+        lis = [self.hv_lbl, self.hv_dbl_sp_box, self.hv_h_spacer, self.hv_p_btn,
+               QVBoxLayout(self.hv_grp_box), self.hv_tbl_wid,
+               QVBoxLayout(), self.hv_grp_box]
+        return self.lay_get(QHBoxLayout(), lis)
 
+    def coin_lay_get(self):
+        lis = [self.coin_lbl, self.coin_dbl_sp_box, self.coin_h_spacer, self.coin_p_btn,
+               QVBoxLayout(self.coin_grp_box), self.coin_tbl_wid,
+               QVBoxLayout(), self.coin_grp_box]
+        return self.lay_get(QHBoxLayout(), lis)
+
+    def cons_lay_get(self):
+        lis = [self.cons_lbl_con, self.cons_cmb_box, self.cons_h_spacer, self.cons_p_btn,
+               QVBoxLayout(self.cons_grp_box), self.cons_tbl_wid,
+               QVBoxLayout(), self.cons_grp_box]
+        return self.lay_get(QHBoxLayout(), lis)
+
+    @flow
     def lay_get(self, lay: QBoxLayout, obj_list: List):
         for obj in obj_list:
             xp(type(obj), **_lay.kw())
-            if isinstance(obj, QCheckBox) or isinstance(obj, QLabel):
+            if isinstance(obj, QBoxLayout):
+                obj.addLayout(lay)
+                lay = obj
+            elif isinstance(obj, QCheckBox) or isinstance(obj, QLabel):
                 lay.addWidget(obj, 0, Qt.AlignLeft)
             elif isinstance(obj, QPushButton) or isinstance(obj, QDoubleSpinBox) or isinstance(obj, QTableWidget) \
                     or isinstance(obj, QGroupBox) or isinstance(obj, QComboBox):
                 lay.addWidget(obj)
             elif isinstance(obj, QSpacerItem):
                 lay.addSpacerItem(obj)
-            elif isinstance(obj, QBoxLayout):
-                lay.addLayout(obj)
         return lay
 
+    def xy_create(self):
+        pass
 
-    def hv_lay_get(self):
-        h_lay1 = self.lay_get(QHBoxLayout(self.hv_grp_box), [self.hv_lbl, self.hv_dbl_sp_box, self.hv_h_spacer, self.hv_p_btn])
-        v_lay2 = self.lay_get(QVBoxLayout(self.hv_grp_box), [h_lay1, self.hv_tbl_wid])
-        v_lay1 = self.lay_get(QVBoxLayout(), [self.hv_grp_box, v_lay2])
-        return v_lay1
-
-    def hv_lay_get2(self):
-        v_lay1 = QVBoxLayout()
-        v_lay1.addWidget(self.hv_grp_box)
-        v_lay2 = QVBoxLayout(self.hv_grp_box)
-        h_lay1 = QHBoxLayout(self.hv_grp_box)
-        h_lay1.addWidget(self.hv_lbl, 0, Qt.AlignLeft)
-        h_lay1.addWidget(self.hv_dbl_sp_box)
-        h_lay1.addSpacerItem(self.hv_h_spacer)
-        h_lay1.addWidget(self.hv_p_btn)
-        v_lay2.addLayout(h_lay1)
-        v_lay2.addWidget(self.hv_tbl_wid)
-        v_lay1.addLayout(v_lay2)
-        return v_lay1
-
-
-    def coin_lay_get(self):
-        h_lay1 = self.lay_get(QHBoxLayout(self.coin_grp_box), [self.coin_lbl, self.coin_dbl_sp_box, self.coin_h_spacer, self.coin_p_btn])
-        v_lay2 = self.lay_get(QVBoxLayout(self.coin_grp_box), [h_lay1, self.coin_tbl_wid])
-        v_lay1 = self.lay_get(QVBoxLayout(), [self.coin_grp_box, v_lay2])
-        return v_lay1
-
-
-    def coin_lay_get2(self):
-        v_lay1 = QVBoxLayout()
-        v_lay1.addWidget(self.coin_grp_box)
-        v_lay2 = QVBoxLayout(self.coin_grp_box)
-        h_lay1 = QHBoxLayout(self.coin_grp_box)
-        h_lay1.addWidget(self.coin_lbl, 0, Qt.AlignLeft)
-        h_lay1.addWidget(self.coin_dbl_sp_box)
-        h_lay1.addSpacerItem(self.coin_h_spacer)
-        h_lay1.addWidget(self.coin_p_btn)
-        v_lay2.addLayout(h_lay1)
-        v_lay2.addWidget(self.coin_tbl_wid)
-        v_lay1.addLayout(v_lay2)
-        return v_lay1
-
-    def cons_lay_get(self):
-        h_lay1 = self.lay_get(QHBoxLayout(self.cons_grp_box), [self.cons_lbl_con, self.cons_cmb_box, self.cons_h_spacer, self.cons_p_btn])
-        v_lay2 = self.lay_get(QVBoxLayout(self.cons_grp_box), [h_lay1, self.cons_tbl_wid])
-        v_lay1 = self.lay_get(QVBoxLayout(), [self.cons_grp_box, v_lay2])
-        return v_lay1
-
-
-    def cons_lay_get2(self):
-        v_lay1 = QVBoxLayout()
-        v_lay1.addWidget(self.cons_grp_box)
-        v_lay2 = QVBoxLayout(self.cons_grp_box)
-        h_lay1 = QHBoxLayout(self.cons_grp_box)
-        h_lay1.addWidget(self.cons_lbl_con, 0, Qt.AlignLeft)
-        h_lay1.addWidget(self.cons_cmb_box)
-        h_lay1.addSpacerItem(self.cons_h_spacer)
-        h_lay1.addWidget(self.cons_p_btn)
-        v_lay2.addLayout(h_lay1)
-        v_lay2.addWidget(self.cons_tbl_wid)
-        v_lay1.addLayout(v_lay2)
-        return v_lay1
+    @flow
+    def xy_prep_table(self, obj):
+        return QTableWidget(obj)
 
     @flow
     def rad_prep_table(self, obj):
@@ -255,7 +267,6 @@ class FixItGui(QWidget):
         w_item = QTableWidgetItem()
         w_item.setText(u"Radius")
         table_widget.setHorizontalHeaderItem(1, w_item)
-
         self.__prep_table(table_widget)
         return table_widget
 
@@ -481,7 +492,6 @@ class FixItGui(QWidget):
         tbl.horizontalHeader().setVisible(True)
         tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         tbl.setColumnHidden(2, True)
-        # tbl.sortByColumn(0, Qt.AscendingOrder)
         tbl.sortByColumn(0)
         tbl.setSortingEnabled(True)
         tbl.sortItems(0, Qt.AscendingOrder)
@@ -495,9 +505,7 @@ class FixItGui(QWidget):
                     "padding-left: 10px; " \
                     "padding-right: 10px; " \
                     "border: none; " \
-                    "}" \
-                    # "border-right: 1px solid rgb(45, 45, 45); " \
-                    # "border-bottom: 1px solid rgb(45, 45, 45); "
+                    "}"
         tbl.setStyleSheet(tbl_style)
 
 
@@ -505,7 +513,7 @@ if __name__ == '__main__':
 
     import sys
 
-    app = QApplication(sys.argv)
+    app = QApplication()
     style(app)
     controller = FixItGui()
     controller.show()
