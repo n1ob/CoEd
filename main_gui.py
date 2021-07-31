@@ -1,13 +1,12 @@
 from typing import List
 
 from PySide2.QtCore import Qt, QItemSelectionModel, QModelIndex
-from PySide2.QtGui import QPalette, QColor
 from PySide2.QtWidgets import QComboBox, QWidget, QVBoxLayout, \
-    QApplication, QHBoxLayout, QPushButton, QTabWidget, QLabel, QTableWidget, QTableWidgetItem, QStyleFactory, \
+    QApplication, QHBoxLayout, QPushButton, QTabWidget, QLabel, QTableWidget, QTableWidgetItem, \
     QAbstractItemView, QHeaderView, QGroupBox, QSizePolicy, QDoubleSpinBox, QSpacerItem, QCheckBox, QBoxLayout
 
-from main_impl import FixIt, ConType, pt_pos_str, CircleTu
-from tools import xp, XpConf, flow
+from main_impl import FixIt, ConType, pt_pos_str
+from tools import xp, XpConf, flow, my_style
 
 _coin = XpConf('coin', 'ui-coi')
 _hv = XpConf('hv', 'ui-hv ')
@@ -21,34 +20,13 @@ XpConf.topics.add('hv')
 XpConf.topics.add('flow')
 
 
-@flow
-def style(app):
-    app.setStyle(QStyleFactory.create("Fusion"))
-    palette = QPalette()
-    palette.setColor(QPalette.Window, QColor(53, 53, 53))
-    palette.setColor(QPalette.WindowText, Qt.white)
-    palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor(127, 127, 127))
-    palette.setColor(QPalette.Base, QColor(42, 42, 42))
-    palette.setColor(QPalette.AlternateBase, QColor(66, 66, 66))
-    palette.setColor(QPalette.ToolTipBase, Qt.white)
-    palette.setColor(QPalette.ToolTipText, QColor(53, 53, 53))
-    palette.setColor(QPalette.Text, Qt.white)
-    palette.setColor(QPalette.Disabled, QPalette.Text, QColor(127, 127, 127))
-    palette.setColor(QPalette.Dark, QColor(35, 35, 35))
-    palette.setColor(QPalette.Shadow, QColor(20, 20, 20))
-    palette.setColor(QPalette.Button, QColor(53, 53, 53))
-    palette.setColor(QPalette.ButtonText, Qt.white)
-    palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(127, 127, 127))
-    palette.setColor(QPalette.BrightText, Qt.red)
-    palette.setColor(QPalette.Link, QColor(42, 130, 218))
-    palette.setColor(QPalette.Highlight, QColor(203, 119, 47))
-    palette.setColor(QPalette.Disabled, QPalette.Highlight, QColor(80, 80, 80))
-    palette.setColor(QPalette.HighlightedText, Qt.white)
-    palette.setColor(QPalette.Disabled, QPalette.HighlightedText, QColor(127, 127, 127))
-    app.setPalette(palette)
-
-
 class FixItGui(QWidget):
+    # Constraint, Coincident, Horizontal/Vertical
+    # Rad()ius, X/Y (Distance)
+    #
+    # geo list filter?
+    # quit_button = QPushButton("&Quit")
+    # quit_button.clicked.connect(self.close)
     @flow
     def __init__(self, base: FixIt):
         super().__init__()
@@ -57,27 +35,14 @@ class FixItGui(QWidget):
         flags |= Qt.WindowStaysOnTopHint
         self.setWindowFlags(flags)
 
-        # (label constrain) (combo type) (del btn)
-        # all, coin, v/h, radius, dist, eq, sym
-        # (constrain list)
-        #
-        # (label coincident) (edit snap dist) (btn fix)
-        # (label v/h) (edit snap angel) (btn fix)
-        # (label radius) (btn fix)
-        # (label dist) (btn fix)
-        #
-        # geo list filter?
-        # quit_button = QPushButton("&Quit")
-        # quit_button.clicked.connect(self.close)
-
         self.tabs = QTabWidget()
         self.tab_cons = QWidget()
         self.tab_coin = QWidget()
         self.tab_rad = QWidget()
         self.tab_hv = QWidget()
         self.tab_xy = QWidget()
-        self.tabs.addTab(self.tab_cons, "Cons")
-        self.tabs.addTab(self.tab_coin, "Coin")
+        self.tabs.addTab(self.tab_cons, "Cs")
+        self.tabs.addTab(self.tab_coin, "Co")
         self.tabs.addTab(self.tab_hv, "H/V")
         self.tabs.addTab(self.tab_rad, "Rad")
         self.tabs.addTab(self.tab_xy, "X/Y")
@@ -159,51 +124,6 @@ class FixItGui(QWidget):
         sb.valueChanged.connect(func)
         return sb
 
-    # @flow
-    # def xy_lay_get2(self):
-    #     h_lay1 = self.lay_get(QHBoxLayout(), [self.xy_h_spacer, self.xy_p_btn])
-    #     v_lay2 = self.lay_get(QVBoxLayout(self.xy_grp_box), [h_lay1, self.xy_tbl_wid])
-    #     v_lay1 = self.lay_get(QVBoxLayout(), [self.xy_grp_box, v_lay2])
-    #     return v_lay1
-    #
-    # def rad_lay_get2(self):
-    #     h_lay1 = self.lay_get(QHBoxLayout(), [self.rad_chk_box, self.rad_dbl_sp_box, self.rad_h_spacer, self.rad_p_btn])
-    #     v_lay2 = self.lay_get(QVBoxLayout(self.rad_grp_box), [h_lay1, self.rad_tbl_wid])
-    #     v_lay1 = self.lay_get(QVBoxLayout(), [self.rad_grp_box, v_lay2])
-    #     return v_lay1
-    #
-    # def hv_lay_get2(self):
-    #     h_lay1 = self.lay_get(QHBoxLayout(), [self.hv_lbl, self.hv_dbl_sp_box, self.hv_h_spacer, self.hv_p_btn])
-    #     v_lay2 = self.lay_get(QVBoxLayout(self.hv_grp_box), [h_lay1, self.hv_tbl_wid])
-    #     v_lay1 = self.lay_get(QVBoxLayout(), [self.hv_grp_box, v_lay2])
-    #     return v_lay1
-    #
-    # def coin_lay_get2(self):
-    #     h_lay1 = self.lay_get(QHBoxLayout(), [self.coin_lbl, self.coin_dbl_sp_box, self.coin_h_spacer, self.coin_p_btn])
-    #     v_lay2 = self.lay_get(QVBoxLayout(self.coin_grp_box), [h_lay1, self.coin_tbl_wid])
-    #     v_lay1 = self.lay_get(QVBoxLayout(), [self.coin_grp_box, v_lay2])
-    #     return v_lay1
-    #
-    # def cons_lay_get2(self):
-    #     h_lay1 = self.lay_get(QHBoxLayout(), [self.cons_lbl_con, self.cons_cmb_box, self.cons_h_spacer, self.cons_p_btn])
-    #     v_lay2 = self.lay_get(QVBoxLayout(self.cons_grp_box), [h_lay1, self.cons_tbl_wid])
-    #     v_lay1 = self.lay_get(QVBoxLayout(), [self.cons_grp_box, v_lay2])
-    #     return v_lay1
-    #
-    # def lay_get(self, lay: QBoxLayout, obj_list: List):
-    #     for obj in obj_list:
-    #         xp(type(obj), **_lay.kw())
-    #         if isinstance(obj, QCheckBox) or isinstance(obj, QLabel):
-    #             lay.addWidget(obj, 0, Qt.AlignLeft)
-    #         elif isinstance(obj, QPushButton) or isinstance(obj, QDoubleSpinBox) or isinstance(obj, QTableWidget) \
-    #                 or isinstance(obj, QGroupBox) or isinstance(obj, QComboBox):
-    #             lay.addWidget(obj)
-    #         elif isinstance(obj, QSpacerItem):
-    #             lay.addSpacerItem(obj)
-    #         elif isinstance(obj, QBoxLayout):
-    #             lay.addLayout(obj)
-    #     return lay
-
     def xy_lay_get(self):
         lis = [self.xy_h_spacer, self.xy_p_btn,
                QVBoxLayout(self.xy_grp_box), self.xy_tbl_wid,
@@ -255,7 +175,19 @@ class FixItGui(QWidget):
 
     @flow
     def xy_prep_table(self, obj):
-        return QTableWidget(obj)
+        table_widget = QTableWidget(obj)
+        table_widget.setColumnCount(3)
+        w_item = QTableWidgetItem()
+        w_item.setText(u"Edge")
+        table_widget.setHorizontalHeaderItem(0, w_item)
+        w_item = QTableWidgetItem()
+        w_item.setText(u"X/Y")
+        table_widget.setHorizontalHeaderItem(1, w_item)
+        self.__prep_table(table_widget)
+        return table_widget
+
+    def xy_update_table(self):
+        pass
 
     @flow
     def rad_prep_table(self, obj):
@@ -300,7 +232,7 @@ class FixItGui(QWidget):
         self.hv_tbl_wid.setRowCount(0)
         __sorting_enabled = self.hv_tbl_wid.isSortingEnabled()
         self.hv_tbl_wid.setSortingEnabled(False)
-        cir_list: List[CircleTu] = self.base.circle_get_list()
+        cir_list: List[FixIt.CircleTu] = self.base.circle_get_list()
         xp('->', cir_list, **_rad.kw(4))
         for item in cir_list:
             self.rad_tbl_wid.insertRow(0)
@@ -352,8 +284,10 @@ class FixItGui(QWidget):
         self.hv_tbl_wid.setRowCount(0)
         __sorting_enabled = self.hv_tbl_wid.isSortingEnabled()
         self.hv_tbl_wid.setSortingEnabled(False)
-        edge_list: List[FixIt.Edge] = self.base.edges_get_list()
+        edge_list: List[FixIt.Edge] = self.base.hv_edges_get_list()
         for idx, item in enumerate(edge_list):
+            if item.has_hv_cons:
+                continue
             self.hv_tbl_wid.insertRow(0)
             fmt2 = "x {:.2f} y {:.2f} : x {:.2f} y {:.2f}".format(item.seg.StartPoint.x, item.seg.StartPoint.y, item.seg.EndPoint.x, item.seg.EndPoint.y)
             xp('col 1', fmt2, **_hv.kw(4))
@@ -409,19 +343,19 @@ class FixItGui(QWidget):
         pt_list: List[FixIt.Point] = self.base.points_get_list()
         for i in range(len(pt_list)):
             pt: FixIt.Point = pt_list[i]
-            if len(pt.CoincidentPts) == 1:
+            if len(pt.coin_pts) == 1:
                 continue
-            if len(pt.CoincidentPts) > 1:
-                xp(pt.GeoItemPt, " : ", pt.CoincidentPts, **_coin.kw(4))
+            if len(pt.coin_pts) > 1:
+                xp(pt.geo_item_pt, " : ", pt.coin_pts, **_coin.kw(4))
                 self.coin_tbl_wid.insertRow(0)
-                fmt = "{0:.2f} : {1:.2f}".format(pt.GeoItemPt.x, pt.GeoItemPt.y)
+                fmt = "{0:.2f} : {1:.2f}".format(pt.geo_item_pt.x, pt.geo_item_pt.y)
                 self.coin_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
                 w_item = QTableWidgetItem()
                 w_item.setData(Qt.EditRole, i)
                 self.cons_tbl_wid.setItem(0, 2, w_item)
                 fmt = ""
-                for j in range(len(pt.CoincidentPts)):
-                    cpt: FixIt.Point.CoincidentPt = pt.CoincidentPts[j]
+                for j in range(len(pt.coin_pts)):
+                    cpt: FixIt.Point.CoinPt = pt.coin_pts[j]
                     fmt += "{0}.{1}  ".format(cpt.geo_idx + 1, pt_pos_str[cpt.pt_type])
                     self.coin_tbl_wid.setItem(0, 1, QTableWidgetItem(fmt))
         self.coin_tbl_wid.setSortingEnabled(__sorting_enabled)
@@ -492,9 +426,9 @@ class FixItGui(QWidget):
         tbl.horizontalHeader().setVisible(True)
         tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         tbl.setColumnHidden(2, True)
-        tbl.sortByColumn(0)
-        tbl.setSortingEnabled(True)
+        # tbl.sortByColumn(0)
         tbl.sortItems(0, Qt.AscendingOrder)
+        tbl.setSortingEnabled(True)
         hh: QHeaderView = tbl.horizontalHeader()
         hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         hh.setSectionResizeMode(1, QHeaderView.Stretch)
@@ -514,7 +448,7 @@ if __name__ == '__main__':
     import sys
 
     app = QApplication()
-    style(app)
+    my_style(app)
     controller = FixItGui()
     controller.show()
     sys.exit(app.exec_())

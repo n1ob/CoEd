@@ -63,50 +63,74 @@ class ConType(Enum):
     ALL               = "All"
 
 
-class PtTu(NamedTuple):
+class GeoPt(NamedTuple):
     geo_id: int
     type_id: str
 
-
-class CircleTu(NamedTuple):
-    geo_id: int
-    center_x: float
-    center_y: float
-    angle_xu: float
-    radius: float
+    def __str__(self):
+        return "GeoId {}.{}".format(self.geo_id, self.type_id)
 
 
-class CoinTu(NamedTuple):
-    first: PtTu
-    second: PtTu
+class ConsCoin(NamedTuple):
+    first: GeoPt
+    second: GeoPt
+
+    def __str__(self):
+        return "GeoIds {}, {}".format(self.first, self.second)
 
 
 class FixIt:
 
-    class Point:
+    class Circle(NamedTuple):
+        geo_id: int
+        center_x: float
+        center_y: float
+        angle_xu: float
+        radius: float
 
+        def __str__(self):
+            s = "GeoId {}, Center ({}, {}), xu {}, rad {}"
+            return s.format(self.geo_id, self.center_x, self.center_y, self.angle_xu, self.radius)
+
+    class Point:
         @flow
         def __init__(self, geo_item_pt: Base.Vector, geo_list_idx: int, pt_type: int):
-            self.GeoItemPt: Base.Vector = geo_item_pt
-            self.CoincidentPts: List[FixIt.Point.CoincidentPt] = []
+            self.geo_item_pt: Base.Vector = geo_item_pt
+            self.coin_pts: List[FixIt.Point.CoinPt] = []
             self.extend(geo_list_idx, pt_type)
+
+        def __str__(self):
+            s = "GeoId {}.{}, Start {:.2f}, End {:.2f}, CPts {}"
+            return s.format(self.coin_pts[0].geo_idx, self.coin_pts[0].pt_type, self.geo_item_pt.x,
+                            self.geo_item_pt.y, self.coin_pts)
 
         @flow
         def extend(self, geo_list_idx: int, pt_type: int):
-            item = FixIt.Point.CoincidentPt(geo_list_idx, pt_type)
-            self.CoincidentPts.append(item)
+            item = FixIt.Point.CoinPt(geo_list_idx, pt_type)
+            self.coin_pts.append(item)
 
-        class CoincidentPt(NamedTuple):
+        class CoinPt(NamedTuple):
             geo_idx: int
             pt_type: int
 
+            def __str__(self):
+                return "GeoId {}.{}".format(self.geo_idx, self.pt_type)
+
     class Edge:
         @flow
-        def __init__(self, geo_idx: int, seg: Part.LineSegment, x_angel: float, y_angel: float):
+        def __init__(self, geo_idx: int, seg: Part.LineSegment, x_angel: float, y_angel: float, has_hv: bool = False):
             self.geo_idx = geo_idx
             self.seg: Part.LineSegment = seg
             self.x_angel: float = fabs(x_angel)
             self.y_angel: float = fabs(y_angel)
+            self.has_hv_cons = has_hv
+
+        def __str__(self):
+            s = "GeoId {}, Start ({:.2f}, {:.2f}), End ({:.2f}, {:.2f}), xa {}, ya {}, cs {}"
+            st: Base.Vector = self.seg.StartPoint
+            en: Base.Vector = self.seg.EndPoint
+            return s.format(self.geo_idx, st.x, st.y, en.x, en.y,
+                            self.x_angel, self.y_angel, self.has_hv_cons)
 
     class Constraint:
         @flow
@@ -138,11 +162,11 @@ class FixIt:
         self.snap_dist: float = snap_dist
         self.snap_angel: float = snap_angel
         self.radius: float = 5
-        self.__edges: List[FixIt.Edge] = []
-        self.__points: List[FixIt.Point] = []
+        self.__hv_edges: List[FixIt.Edge] = []
+        self.__coin_points: List[FixIt.Point] = []
         self.__constraints: List[FixIt.Constraint] = []
-        self.__edges_dirty: bool = True
-        self.__points_dirty: bool = True
+        self.__hv_edges_dirty: bool = True
+        self.__coin_points_dirty: bool = True
         self.__constraints_dirty: bool = True
         self.__dbg_co_pts_list: List[str] = []
         self.__init = True
@@ -165,7 +189,7 @@ class FixIt:
     @snap_dist.setter
     def snap_dist(self, value: float):
         self.__snap_dist: float = value
-        self.__points_dirty = True
+        self.__coin_points_dirty = True
 
     @property
     def snap_angel(self) -> float:
@@ -174,7 +198,7 @@ class FixIt:
     @snap_angel.setter
     def snap_angel(self, value: float):
         self.__snap_angel: float = value
-        self.__edges_dirty = True
+        self.__hv_edges_dirty = True
 
     @property
     def sketch(self) -> SketcherType:
@@ -184,8 +208,8 @@ class FixIt:
     def sketch(self, value: SketcherType):
         self.__sketch: SketcherType = value
         self.__constraints_dirty = True
-        self.__edges_dirty = True
-        self.__points_dirty = True
+        self.__hv_edges_dirty = True
+        self.__coin_points_dirty = True
 
     """
     <GeoExtensions count="1">
@@ -194,19 +218,19 @@ class FixIt:
     <Circle CenterX="4.48441" CenterY="4.44959" CenterZ="0" NormalX="0" NormalY="0" NormalZ="1" AngleXU="-0" Radius="1.46"/>
     """
     @flow
-    def circle_get_list(self) -> List[CircleTu]:
+    def circle_get_list(self) -> List[Circle]:
         geo_list = self.sketch.Geometry
-        c_list: List[CircleTu] = [CircleTu(idx, x.Center.x, x.Center.y, x.AngleXU, x.Radius)
-                                  for idx, x in enumerate(geo_list)
-                                  if x.TypeId == 'Part::GeomCircle']
+        c_list: List[FixIt.Circle] = [FixIt.Circle(idx, x.Center.x, x.Center.y, x.AngleXU, x.Radius)
+                                      for idx, x in enumerate(geo_list)
+                                      if x.TypeId == 'Part::GeomCircle']
         xp(c_list, **_cir.kw())
         return c_list
 
     @flow
     def points_get_list(self) -> List[Point]:
-        if self.__points_dirty:
+        if self.__coin_points_dirty:
             self.coin_detect_missing()
-        return self.__points
+        return self.__coin_points
 
     @flow
     def constraints_get_list(self) -> List[Constraint]:
@@ -215,10 +239,10 @@ class FixIt:
         return self.__constraints
 
     @flow
-    def edges_get_list(self) -> List[Edge]:
-        if self.__edges_dirty:
+    def hv_edges_get_list(self) -> List[Edge]:
+        if self.__hv_edges_dirty:
             self.hv_detect_missing()
-        return self.__edges
+        return self.__hv_edges
 
     ###############
     # Vertical / Horizontal
@@ -244,23 +268,20 @@ class FixIt:
         xp('existing constrains GeoId:', ' '.join(map(str, existing)), **_hv.kw())
         geo_list = self.sketch.Geometry
         for idx, geo_item in enumerate(geo_list):
-            if idx in existing:
-                xp('skip geo', idx, **_hv.kw())
-                continue
             if geo_item.TypeId == 'Part::GeomLineSegment':
                 seg: Part.LineSegment = geo_item
                 start: Base.Vector = Base.Vector(seg.StartPoint)
                 end: Base.Vector = Base.Vector(seg.EndPoint)
                 a: float = self.__alpha(start, end)
                 if (a < self.snap_angel) or ((90 - a) < self.snap_angel):
-                    self.__edges.append(FixIt.Edge(idx, seg, 90 - a, a))
-        self.__edges_dirty = False
+                    self.__hv_edges.append(FixIt.Edge(idx, seg, 90 - a, a, (idx in existing)))
+        self.__hv_edges_dirty = False
         self.print_edge_angel_list()
 
     @flow
     def hv_create(self, edge_id_list: List[int]):
         for idx in edge_id_list:
-            edge: FixIt.Edge = self.__edges[idx]
+            edge: FixIt.Edge = self.__hv_edges[idx]
             if edge.x_angel <= self.snap_angel:
                 con = Sketcher.Constraint('Horizontal', edge.geo_idx)
                 self.sketch.addConstraint(con)
@@ -268,7 +289,7 @@ class FixIt:
             if edge.y_angel <= self.snap_angel:
                 con = Sketcher.Constraint('Vertical', edge.geo_idx)
                 self.sketch.addConstraint(con)
-        self.__edges_dirty = True
+        self.__hv_edges_dirty = True
 
     ##############
     # Coincident
@@ -276,27 +297,27 @@ class FixIt:
     def __coin_add_point(self, geo_item_pt: Base.Vector, geo_list_idx: int, pt_type: int, tolerance) -> None:
         xp("({:.2f}, {:.2f}) : Id {:n} : Type {:n}".format(geo_item_pt.x, geo_item_pt.y, geo_list_idx, pt_type), **_co_build.kw(2))
         new_pt = FixIt.Point(geo_item_pt, geo_list_idx, pt_type)
-        for i, pt in enumerate(self.__points):
-            xp("Id: {:n} Dist {:.4f}".format(i, pt.GeoItemPt.distanceToPoint(new_pt.GeoItemPt)), **_co_build.kw(4))
+        for i, pt in enumerate(self.__coin_points):
+            xp("Id: {:n} Dist {:.4f}".format(i, pt.geo_item_pt.distanceToPoint(new_pt.geo_item_pt)), **_co_build.kw(4))
             if self.__coin_consider(pt, new_pt):
-                if pt.GeoItemPt.isEqual(new_pt.GeoItemPt, tolerance):
+                if pt.geo_item_pt.isEqual(new_pt.geo_item_pt, tolerance):
                     xp('snap', **_co_build.kw(8))
                     pt.extend(geo_list_idx, pt_type)
                     return
-        self.__points.append(new_pt)
+        self.__coin_points.append(new_pt)
 
     @flow
-    def __coin_get_cons_tuples(self) -> Set[CoinTu]:
-        col: Set[CoinTu] = {CoinTu(PtTu(x.first, x.first_pos), PtTu(x.second, x.second_pos))
-                            for x in self.constraints_get_list()
-                            if ConType(x.type_id) == ConType.COINCIDENT}
+    def __coin_get_cons_tuples(self) -> Set[ConsCoin]:
+        col: Set[ConsCoin] = {ConsCoin(GeoPt(x.first, x.first_pos), GeoPt(x.second, x.second_pos))
+                              for x in self.constraints_get_list()
+                              if ConType(x.type_id) == ConType.COINCIDENT}
         return col
 
     @flow
     def __coin_consider(self, pt: Point, new_pt: Point) -> bool:
-        cs: Set[CoinTu] = self.__coin_get_cons_tuples()
-        pn: PtTu = PtTu(new_pt.CoincidentPts[0].geo_idx, pt_pos_str[new_pt.CoincidentPts[0].pt_type])
-        pts: Set[PtTu] = set(map(lambda x: PtTu(x.geo_idx, pt_pos_str[x.pt_type]), pt.CoincidentPts))
+        cs: Set[ConsCoin] = self.__coin_get_cons_tuples()
+        pn: GeoPt = GeoPt(new_pt.coin_pts[0].geo_idx, pt_pos_str[new_pt.coin_pts[0].pt_type])
+        pts: Set[GeoPt] = set(map(lambda x: GeoPt(x.geo_idx, pt_pos_str[x.pt_type]), pt.coin_pts))
         xp('CS :', str(cs), 'PN :', str(pn), 'PTS: ' + str(pts), **_co_co.kw(4))
         if any(a.geo_id == pn.geo_id for a in pts):
             xp('any(a[0] == pn[0] for a in pts)', **_co_co.kw(8))
@@ -311,7 +332,7 @@ class FixIt:
 
     @flow
     def coin_detect_missing(self) -> None:
-        self.__points.clear()
+        self.__coin_points.clear()
         geo_list = self.sketch.Geometry
         for i in range(len(geo_list)):
             xp("Sketch.Geometry: {:n}".format(i), **_co_build.kw())
@@ -324,18 +345,18 @@ class FixIt:
     @flow
     def coin_create(self, pt_idx_list: List[int]):
         for idx in pt_idx_list:
-            pt = self.__points[idx]
-            if len(pt.CoincidentPts) == 1:
+            pt = self.__coin_points[idx]
+            if len(pt.coin_pts) == 1:
                 continue
-            if len(pt.CoincidentPts) > 1:
+            if len(pt.coin_pts) > 1:
                 # only create a connect chain
-                for i in range(len(pt.CoincidentPts) - 1):
-                    p1 = pt.CoincidentPts[i - 1]
-                    p2 = pt.CoincidentPts[i]
+                for i in range(len(pt.coin_pts) - 1):
+                    p1 = pt.coin_pts[i - 1]
+                    p2 = pt.coin_pts[i]
                     con = Sketcher.Constraint('Coincident', p1.geo_idx, p1.pt_type, p2.geo_idx, p2.pt_type)
                     self.sketch.addConstraint(con)
                     self.__constraints_dirty = True
-                    self.__points_dirty = True
+                    self.__coin_points_dirty = True
 
 
     ##############
@@ -345,9 +366,9 @@ class FixIt:
         obj = self.points_get_list()
         for pt in obj:
             self.sketch.addConstraint(Sketcher.Constraint(
-                'DistanceX', pt.CoincidentPts[0].geo_idx, pt.CoincidentPts[0].pt_type, pt.GeoItemPt.x))
+                'DistanceX', pt.coin_pts[0].geo_idx, pt.coin_pts[0].pt_type, pt.geo_item_pt.x))
             self.sketch.addConstraint(Sketcher.Constraint(
-                'DistanceY', pt.CoincidentPts[0].geo_idx, pt.CoincidentPts[0].pt_type, pt.GeoItemPt.y))
+                'DistanceY', pt.coin_pts[0].geo_idx, pt.coin_pts[0].pt_type, pt.geo_item_pt.y))
 
     ##############
     # diameters
@@ -568,7 +589,7 @@ class FixIt:
     # dbg info
     @flow
     def print_edge_angel_list(self):
-        obj: List[FixIt.Edge] = self.edges_get_list()
+        obj: List[FixIt.Edge] = self.hv_edges_get_list()
         for edge in obj:
             seg: LineSegment = edge.seg
             s = "Id {} x {:.2f}, y {:.2f} : x {:.2f}, y {:.2f} : xa {:.2f} : ya {:.2f}"
@@ -580,7 +601,7 @@ class FixIt:
     def print_coincident_list(self):
         obj = self.points_get_list()
         for i in range(len(obj)):
-            xp(str(obj[i].GeoItemPt) + " : " + str(obj[i].CoincidentPts))
+            xp(str(obj[i].geo_item_pt) + " : " + str(obj[i].coin_pts))
 
     @flow
     def print_build_co_pts(self):

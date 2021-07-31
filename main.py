@@ -11,7 +11,7 @@ import Sketcher
 from PySide2.QtWidgets import QApplication
 
 from main_impl import FixIt
-from main_gui import FixItGui, style
+from main_gui import FixItGui, my_style
 
 try:
     from Sketcher import ActiveSketch  # hack def in Sketcher.pyi, ActiveSketch is actually in the current local scope
@@ -80,7 +80,7 @@ def main_t(sketch: SketcherType = None):  # param used for test and dbg
         print("No Sketch")
 
     app = QApplication([])
-    style(app)
+    my_style(app)
     ex = FixItGui(c)
     ex.show()
     app.exec_()
