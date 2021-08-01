@@ -2,11 +2,73 @@ import sys
 from typing import Set
 from functools import wraps
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QPalette, QColor
+from PySide2.QtCore import Qt, QRegExp
+from PySide2.QtGui import QPalette, QColor, QSyntaxHighlighter, QTextCharFormat
 from PySide2.QtWidgets import QStyleFactory
 
 
+class XMLHighlighter(QSyntaxHighlighter):
+    """
+    Class for highlighting xml text inherited from QSyntaxHighlighter
+    """
+    # noinspection PyArgumentList
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.highlight_rules = list()
+        xml_elem_format = QTextCharFormat()
+        xml_elem_format.setForeground(QColor("#007070"))
+        self.highlight_rules.append((QRegExp("\\b[A-Za-z0-9_]+(?=[\s/>])"), xml_elem_format))
+
+        xml_attr_format = QTextCharFormat()
+        xml_attr_format.setFontItalic(True)
+        xml_attr_format.setForeground(QColor("#177317"))
+        self.highlight_rules.append((QRegExp("\\b[A-Za-z0-9_]+(?=\\=)"), xml_attr_format))
+        self.highlight_rules.append((QRegExp("="), xml_attr_format))
+
+        self.value_format = QTextCharFormat()
+        # self.value_format.setForeground(QColor("#b36020"))
+        self.value_format.setForeground(QColor(203, 119, 47))
+        self.value_start_expr = QRegExp("\"")
+        self.value_end_expr = QRegExp("\"(?=[\s></])")
+
+        single_line_comment_format = QTextCharFormat()
+        single_line_comment_format.setForeground(QColor("#a0a0a4"))
+        self.highlight_rules.append((QRegExp("<!--[^\n]*-->"), single_line_comment_format))
+
+        text_format = QTextCharFormat()
+        text_format.setForeground(QColor("#bababa"))
+        self.highlight_rules.append((QRegExp(">(.+)(?=</)"), text_format))
+
+        keyword_format = QTextCharFormat()
+        keyword_format.setForeground(QColor("#007070"))
+        keyword_patterns = ["\\b?xml\\b", "/>", ">", "<", "</"]
+        self.highlight_rules += [(QRegExp(pattern), keyword_format) for pattern in keyword_patterns]
+
+    # noinspection PyArgumentList
+    def highlightBlock(self, text):
+        for pattern, fmt in self.highlight_rules:
+            expression = QRegExp(pattern)
+            index = expression.indexIn(text)
+            while index >= 0:
+                length = expression.matchedLength()
+                self.setFormat(index, length, fmt)
+                index = expression.indexIn(text, index + length)
+        self.setCurrentBlockState(0)
+        start_index = 0
+        if self.previousBlockState() != 1:
+            start_index = self.value_start_expr.indexIn(text)
+        while start_index >= 0:
+            end_index = self.value_end_expr.indexIn(text, start_index)
+            if end_index == -1:
+                self.setCurrentBlockState(1)
+                comment_length = len(text) - start_index
+            else:
+                comment_length = end_index - start_index + self.value_end_expr.matchedLength()
+            self.setFormat(start_index, comment_length, self.value_format)
+            start_index = self.value_start_expr.indexIn(text, start_index + comment_length)
+
+
+# noinspection PyArgumentList
 def my_style(app):
     app.setStyle(QStyleFactory.create("Fusion"))
     palette = QPalette()
@@ -44,7 +106,7 @@ class XpConf:
         self.topic = topic
         self.separator = separator
 
-    def kw(self, indent: int = 0) -> dict:
+    def k(self, indent: int = 0) -> dict:
         d: dict = dict()
         if indent:
             d.update({'indent': indent})
@@ -77,7 +139,6 @@ def xp(*args, **kwargs):
     args = ['{}'.format(i) for i in args]
     if indent:
         args.insert(0, ' ' * (indent - 1))
-
     if prepend is not None:
         args.insert(0, prepend)
     if append is not None:
@@ -85,6 +146,60 @@ def xp(*args, **kwargs):
     # print(*args, **kwargs, sep='-')
     if topic in XpConf.topics:
         print(*args, **kwargs)
+
+
+def xpe(x: XpConf, ind: int, *args):
+    d: dict = x.k(ind)
+    prepend: str = d.pop('prepend', None)
+    append: str = d.pop('append', None)
+    topic: str = d.pop('topic', '')
+    indent: int = d.pop('indent', 0)
+    args = ['{}'.format(i) for i in args]
+    if indent:
+        args.insert(0, ' ' * (indent - 1))
+    if prepend is not None:
+        args.insert(0, prepend)
+    if append is not None:
+        args.append(append)
+    # print(*args, **kwargs, sep='-')
+    if topic in XpConf.topics:
+        print(*args, **d)
+
+
+def xpc(*args):
+    return XpConf(args[0], args[1])
+
+
+def xpt(*args):
+    XpConf.topics.add(args[0])
+
+
+# dbg config
+_coin = xpc('coin_g', 'ui-coi')
+_hv_g = xpc('hv_g', 'ui-hv ')
+_rad = xpc('rad_g', 'ui-rad')
+_lay = xpc('lay_g', 'ui-lay')
+_prn_edge = xpc('edge', 'edg')
+_co_co = xpc('consider_coin', 'coc')
+_co_build = xpc('co_build', 'cob')
+_hv = xpc('hv', 'hv ')
+_xy = xpc('xy', 'xy ')
+_cir = xpc('circle', 'cir')
+_geo = xpc('geo_list', 'geo')
+
+xpt('flow')
+# xpt('')
+xpt('xy')
+# xpt('coin_g')
+# xpt('hv_g')
+# xpt('rad_g')
+# xpt('lay_g')
+# xpt('circle')
+# xpt('geo_list')
+# xpt('edge')
+# xpt('consider_coin')
+# xpt('hv')
+# xpt('co_build')
 
 
 def flow(func):
@@ -109,9 +224,8 @@ if __name__ == '__main__':
     XpConf.topics.add('')
 
     xp('hi:'+'ho')
-    xp('test', 'hi:'+'ho', **c.kw())
+    xp('test', 'hi:' +'ho', **c.k())
     c.std_err = False
-    xp('test', 'hi:'+'ho', **c.kw(4))
+    xp('test', 'hi:' +'ho', **c.k(4))
 
     addition_func(6)
-

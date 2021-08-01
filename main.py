@@ -8,21 +8,16 @@ import sys
 import FreeCAD as App
 import FreeCADGui as Gui
 import Sketcher
-from PySide2.QtWidgets import QApplication
+from PySide2.QtWidgets import QApplication, QTableWidget
 
 from main_impl import FixIt
-from main_gui import FixItGui, my_style
+from main_gui import FixItGui
+from tools import xp, flow, my_style
 
 try:
     from Sketcher import ActiveSketch  # hack def in Sketcher.pyi, ActiveSketch is actually in the current local scope
 except ImportError:
     pass
-
-from tools import xp, XpConf
-# XpConf.topics.add('flow')
-# XpConf.topics.add('')
-
-
 
 try:
     SketcherType = Sketcher.SketchObject  # Hack for code completion
@@ -74,7 +69,7 @@ def main_t(sketch: SketcherType = None):  # param used for test and dbg
         # print("-------------------------------------------------")
         # c.detect_constraints()
         # c.print_constraints()
-        # c.print_geo()
+        c.print_geo()
         # App.ActiveDocument.recompute()
     else:
         print("No Sketch")
@@ -83,6 +78,10 @@ def main_t(sketch: SketcherType = None):  # param used for test and dbg
     my_style(app)
     ex = FixItGui(c)
     ex.show()
+    # get TableWidget to update geometry
+    ex.tabs.setCurrentIndex(1)
+    ex.tabs.setCurrentIndex(0)
+    # ex.resize(ex.sizeHint())
     app.exec_()
     # print("after exec")
     # sys.exit(app.exec_())
