@@ -3,8 +3,6 @@ from enum import Enum
 from math import *
 from typing import List, NamedTuple, Set
 
-from io import StringIO
-
 import Part
 import Sketcher
 from FreeCAD import Base
@@ -16,7 +14,7 @@ try:
 except AttributeError:
     SketcherType = Sketcher.Sketch
 
-pt_pos_str = {
+pt_typ_str = {
     0: 'n',
     1: 's',
     2: 'e',
@@ -327,8 +325,8 @@ class FixIt:
         return col
 
     def __coin_consider(self, pt: Point, new_pt: Point, cs: Set[ConsCoin]) -> bool:
-        pn: GeoPt = GeoPt(new_pt.coin_pts[0].geo_idx, pt_pos_str[new_pt.coin_pts[0].pt_type])
-        pts: Set[GeoPt] = set(map(lambda x: GeoPt(x.geo_idx, pt_pos_str[x.pt_type]), pt.coin_pts))
+        pn: GeoPt = GeoPt(new_pt.coin_pts[0].geo_idx, pt_typ_str[new_pt.coin_pts[0].pt_type])
+        pts: Set[GeoPt] = set(map(lambda x: GeoPt(x.geo_idx, pt_typ_str[x.pt_type]), pt.coin_pts))
         xp('CS :', str(cs), 'PN :', str(pn), 'PTS: ' + str(pts), **_co_co.k(4))
         if any(a.geo_id == pn.geo_id for a in pts):
             xp('any(a[0] == pn[0] for a in pts)', **_co_co.k(8))
@@ -408,9 +406,9 @@ class FixIt:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2
                 kwargs = {
                     'FIRST': item.First,
-                    'FIRST_POS': pt_pos_str[item.FirstPos],
+                    'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
-                    'SECOND_POS': pt_pos_str[item.SecondPos],
+                    'SECOND_POS': pt_typ_str[item.SecondPos],
                     'FMT': "{0}.{1} : {2}.{3}"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
@@ -422,15 +420,15 @@ class FixIt:
                 if item.Second == -2000:
                     kwargs = {
                         'FIRST': item.First,
-                        'FIRST_POS': pt_pos_str[item.FirstPos],
+                        'FIRST_POS': pt_typ_str[item.FirstPos],
                         'FMT': "{0}.{1}"
                     }
                 else:
                     kwargs = {
                         'FIRST': item.First,
-                        'FIRST_POS': pt_pos_str[item.FirstPos],
+                        'FIRST_POS': pt_typ_str[item.FirstPos],
                         'SECOND': item.Second,
-                        'SECOND_POS': pt_pos_str[item.SecondPos],
+                        'SECOND_POS': pt_typ_str[item.SecondPos],
                         'FMT': "{0}.{1} : {2}.{3}"
                     }
                 con = self.Constraint(i, ct.value, **kwargs)
@@ -452,9 +450,9 @@ class FixIt:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2
                 kwargs = {
                     'FIRST': item.First,
-                    'FIRST_POS': pt_pos_str[item.FirstPos],
+                    'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
-                    'SECOND_POS': pt_pos_str[item.SecondPos],
+                    'SECOND_POS': pt_typ_str[item.SecondPos],
                     'FMT': "{0}.{1} : {2}.{3}"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
@@ -467,16 +465,16 @@ class FixIt:
                 if item.Second == -2000:
                     kwargs = {
                         'FIRST': item.First,
-                        'FIRST_POS': pt_pos_str[item.FirstPos],
+                        'FIRST_POS': pt_typ_str[item.FirstPos],
                         'VALUE': item.Value,
                         'FMT': "{0}.{1}  v: {6:.2f}"
                     }
                 else:
                     kwargs = {
                         'FIRST': item.First,
-                        'FIRST_POS': pt_pos_str[item.FirstPos],
+                        'FIRST_POS': pt_typ_str[item.FirstPos],
                         'SECOND': item.Second,
-                        'SECOND_POS': pt_pos_str[item.SecondPos],
+                        'SECOND_POS': pt_typ_str[item.SecondPos],
                         'VALUE': item.Value,
                         'FMT': "{0}.{1} : {2}.{3}  v: {6:.2f}"
                     }
@@ -489,9 +487,9 @@ class FixIt:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, Value
                 kwargs = {
                     'FIRST': item.First,
-                    'FIRST_POS': pt_pos_str[item.FirstPos],
+                    'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
-                    'SECOND_POS': pt_pos_str[item.SecondPos],
+                    'SECOND_POS': pt_typ_str[item.SecondPos],
                     'VALUE': item.Value,
                     'FMT': "{0}.{1} : {2}.{3}  v: {6:.2f}"
                 }
@@ -504,9 +502,9 @@ class FixIt:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, Value
                 kwargs = {
                     'FIRST': item.First,
-                    'FIRST_POS': pt_pos_str[item.FirstPos],
+                    'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
-                    'SECOND_POS': pt_pos_str[item.SecondPos],
+                    'SECOND_POS': pt_typ_str[item.SecondPos],
                     'VALUE': math.degrees(item.Value),
                     'FMT': "{0}.{1} : {2}.{3}  v: {6:.2f}"
                 }
@@ -527,7 +525,7 @@ class FixIt:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2
                 kwargs = {
                     'FIRST': item.First,
-                    'FIRST_POS': pt_pos_str[item.FirstPos],
+                    'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
                     'FMT': "{0}.{1} : {2}"
                 }
@@ -539,11 +537,11 @@ class FixIt:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, GeoIndex3, PosIndex3
                 kwargs = {
                     'FIRST': item.First,
-                    'FIRST_POS': pt_pos_str[item.FirstPos],
+                    'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
-                    'SECOND_POS': pt_pos_str[item.SecondPos],
+                    'SECOND_POS': pt_typ_str[item.SecondPos],
                     'THIRD': item.Third,
-                    'THIRD_POS': pt_pos_str[item.ThirdPos],
+                    'THIRD_POS': pt_typ_str[item.ThirdPos],
                     'FMT': "{0}.{1} : {2}.{3} : {4}.{5}"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
@@ -555,9 +553,9 @@ class FixIt:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2
                 kwargs = {
                     'FIRST': item.First,
-                    'FIRST_POS': pt_pos_str[item.FirstPos],
+                    'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
-                    'SECOND_POS': pt_pos_str[item.SecondPos],
+                    'SECOND_POS': pt_typ_str[item.SecondPos],
                     'FMT': "{0}.{1} : {2}.{3}"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
@@ -567,11 +565,11 @@ class FixIt:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, GeoIndex3, PosIndex3
                 kwargs = {
                     'FIRST': item.First,
-                    'FIRST_POS': pt_pos_str[item.FirstPos],
+                    'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
-                    'SECOND_POS': pt_pos_str[item.SecondPos],
+                    'SECOND_POS': pt_typ_str[item.SecondPos],
                     'THIRD': item.Third,
-                    'THIRD_POS': pt_pos_str[item.ThirdPos],
+                    'THIRD_POS': pt_typ_str[item.ThirdPos],
                     'FMT': "{0}.{1} : {2}.{3} : {4}.{5}"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)

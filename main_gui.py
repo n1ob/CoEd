@@ -7,7 +7,7 @@ from PySide2.QtWidgets import QComboBox, QWidget, QVBoxLayout, \
     QAbstractItemView, QHeaderView, QGroupBox, QSizePolicy, QDoubleSpinBox, QSpacerItem, QCheckBox, QBoxLayout, \
     QPlainTextEdit
 
-from main_impl import FixIt, ConType, pt_pos_str
+from main_impl import FixIt, ConType, pt_typ_str
 from tools import xp, flow, _lay, _rad, _hv_g, _coin, my_style, XMLHighlighter
 
 
@@ -381,7 +381,7 @@ class FixItGui(QWidget):
                 fmt = ""
                 for j in range(len(pt.coin_pts)):
                     cpt: FixIt.Point.CoinPt = pt.coin_pts[j]
-                    fmt += "{0}.{1}  ".format(cpt.geo_idx + 1, pt_pos_str[cpt.pt_type])
+                    fmt += "{0}.{1}  ".format(cpt.geo_idx + 1, pt_typ_str[cpt.pt_type])
                     self.coin_tbl_wid.setItem(0, 1, QTableWidgetItem(fmt))
         self.coin_tbl_wid.setSortingEnabled(__sorting_enabled)
 
