@@ -12,17 +12,14 @@ from PySide2.QtWidgets import QApplication, QTableWidget
 
 from main_impl import FixIt
 from main_gui import FixItGui
-from tools import xp, flow, my_style
+from style import my_style
+from logger import xp, flow
+from tools import SketcherType
 
 try:
     from Sketcher import ActiveSketch  # hack def in Sketcher.pyi, ActiveSketch is actually in the current local scope
 except ImportError:
     pass
-
-try:
-    SketcherType = Sketcher.SketchObject  # Hack for code completion
-except AttributeError:
-    SketcherType = Sketcher.Sketch
 
 
 def get_sketch() -> SketcherType:
@@ -90,21 +87,6 @@ def main_t(sketch: SketcherType = None):  # param used for test and dbg
 if __name__ == '__main__':
     main_t()
 
-
-# def main():
-#     app = QApplication(sys.argv)
-#
-#     ex = FixIt()
-#     ex.show()
-#     sys.exit(app.exec_())
-#
-
-
-
-# Sketch.addConstraint(Sketcher.Constraint('DistanceX', Pt.Ident[0][0], Pt.Ident[0][1], Pt.Pos.x))
-# Sketch.addConstraint(Sketcher.Constraint('DistanceY', Pt.Ident[0][0], Pt.Ident[0][1], Pt.Pos.y))
-
-# App.getDocument('Unbenannt').getObject('Sketch').addGeometry(Part.Circle(App.Vector(7.000000,7.000000,0),App.Vector(0,0,1),3.000000),False)
 
 # def makeDiameters(Sketch):
 # 	'''diameter constraints for all circles'''

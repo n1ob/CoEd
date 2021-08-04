@@ -3,7 +3,8 @@ import FreeCAD as App
 import Part
 from main import main_t
 import Sketcher
-from tools import xp, flow
+from logger import xp, flow
+
 # App.getDocument('Unbenannt').getObject('Sketch').delGeometries([0])
 
 DOC = "Test"
@@ -78,6 +79,15 @@ class MyTest(unittest.TestCase):
         add_con(Sketcher.Constraint('Coincident', 14, 2, 13, 2))
         add_con(Sketcher.Constraint('PointOnObject', 14, 2, 12))
         add_con(Sketcher.Constraint('SnellsLaw', 14, 2, 13, 2, 12, 0.150000000000))
+
+        main_t(self.ActiveSketch)
+
+    def testCoincident(self):
+
+        make_seg([-7.711252, -4.736607, 0], [4.000000, 7.000000, 0])
+        make_seg([4.777242, 7.000000, 0], [6.781565, -8.488294, 0])
+        make_seg([-8.430755, -6.000000, 0], [6.781565, -9.618939, 0])
+        make_seg([4.366095, 7.597708, 0], [20.452097, 10.475715, 0])
 
         main_t(self.ActiveSketch)
 

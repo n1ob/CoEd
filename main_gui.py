@@ -1,28 +1,54 @@
 from typing import List
 
-from PySide2.QtCore import Qt, QItemSelectionModel, QModelIndex
+from PySide2.QtCore import Qt, QItemSelectionModel, QModelIndex, Slot
 from PySide2.QtGui import QFont
 from PySide2.QtWidgets import QComboBox, QWidget, QVBoxLayout, \
     QApplication, QHBoxLayout, QPushButton, QTabWidget, QLabel, QTableWidget, QTableWidgetItem, \
     QAbstractItemView, QHeaderView, QGroupBox, QSizePolicy, QDoubleSpinBox, QSpacerItem, QCheckBox, QBoxLayout, \
-    QPlainTextEdit
+    QPlainTextEdit, QFontComboBox, QSpinBox
 
-from main_impl import FixIt, ConType, pt_typ_str
-from tools import xp, flow, _lay, _rad, _hv_g, _coin, my_style, XMLHighlighter
+from main_impl import FixIt
+from tools import ConType
+from style import XMLHighlighter, my_style
+from logger import xp, _cog, _hv_g, _rad, _lay, flow
 
+
+'''
+<!-- Geo Idx 0 ---- Part::GeomLineSegment ------------------------------------>
+<GeoExtensions count="0">
+</GeoExtensions>
+<LineSegment StartX="-7.71125" StartY="-4.73661" StartZ="0" EndX="4" EndY="7" EndZ="0"/>
+<!-- Geo Idx 1 ---- Part::GeomLineSegment ------------------------------------>
+<GeoExtensions count="0">
+</GeoExtensions>
+<LineSegment StartX="4.77724" StartY="7" StartZ="0" EndX="6.78156" EndY="-8.48829" EndZ="0"/>
+<!-- Geo Idx 2 ---- Part::GeomLineSegment ------------------------------------>
+<GeoExtensions count="0">
+</GeoExtensions>
+<LineSegment StartX="-8.43075" StartY="-6" StartZ="0" EndX="6.78156" EndY="-9.61894" EndZ="0"/>
+<!-- Geo Idx 3 ---- Part::GeomLineSegment ------------------------------------>
+<GeoExtensions count="0">
+</GeoExtensions>
+<LineSegment StartX="4.36609" StartY="7.59771" StartZ="0" EndX="20.4521" EndY="10.4757" EndZ="0"/>
+
+'''
 
 # noinspection PyArgumentList
 class FixItGui(QWidget):
     # Constraint, Coincident, Horizontal/Vertical
     # Rad()ius, X/Y (Distance)
-    @flow
-    def __init__(self, base: FixIt):
-        super().__init__(None)
+    @flow(short=True)
+    def __init__(self, base: FixIt, parent=None):
+        super().__init__(parent)
         self.base: FixIt = base
         flags: Qt.WindowFlags = Qt.Window
         flags |= Qt.WindowStaysOnTopHint
         self.setWindowFlags(flags)
         self.resize(600, 800)
+        self.tbl_font = QFont("Consolas", 9)
+        self.edt_font = QFont("Consolas", 9)
+
+        self.base.ev.cons_chg.connect(self.say_some_words)
 
         self.tabs = QTabWidget(None)
         self.tab_cons = QWidget(None)
@@ -31,15 +57,63 @@ class FixItGui(QWidget):
         self.tab_hv = QWidget(None)
         self.tab_xy = QWidget(None)
         self.tab_geo = QWidget(None)
+        self.tab_xxx = QWidget(None)
         self.tabs.addTab(self.tab_cons, "Cs")
         self.tabs.addTab(self.tab_coin, "Co")
         self.tabs.addTab(self.tab_hv, "H/V")
         self.tabs.addTab(self.tab_rad, "Rad")
         self.tabs.addTab(self.tab_xy, "X/Y")
         self.tabs.addTab(self.tab_geo, "Geo")
+        self.tabs.addTab(self.tab_xxx, "xxx")
+        # -----------------------------------------------------
+        self.xxx_filter_cmb = QComboBox(self)
+        self.xxx_filter_cmb.addItems(['all fonts', 'scalable', 'non-scalable', 'monospace', 'equal prop'])
+        self.xxx_filter_cmb.currentIndexChanged.connect(self.on_font_filter_changed)
+        self.xxx_filter_cmb.setMaximumWidth(200)
+
+        self.xxx_txt_edt = QPlainTextEdit()
+        self.xxx_txt_edt.setFont(self.edt_font)
+        self.xxx_txt_edt.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.xxx_txt_edt.highlighter = XMLHighlighter(self.xxx_txt_edt.document())
+        self.xxx_txt_edt.setPlainText(self.base.geo_get())
+
+        self.xxx_font_box = QFontComboBox()
+        # self.xxx_font_box.dumpObjectTree()
+        self.xxx_font_box.setCurrentFont(self.edt_font)
+        self.xxx_font_box.currentFontChanged.connect(self.on_font_changed)
+        self.xxx_font_box.setMaximumWidth(300)
+
+        self.xxx_font_size = QSpinBox()
+        self.xxx_font_size.valueChanged.connect(self.on_value_chg)
+        self.xxx_font_size.setRange(6, 32)
+        self.xxx_font_size.setSingleStep(1)
+        self.xxx_font_size.setValue(9)
+
+        self.xxx_btn_geo = QPushButton('geo')
+        self.xxx_btn_geo.clicked.connect(self.on_clk_geo)
+        self.xxx_btn_tbl = QPushButton('tbl')
+        self.xxx_btn_tbl.clicked.connect(self.on_clk_tbl)
+
+        h_lay = QHBoxLayout()
+        h_lay.addWidget(self.xxx_filter_cmb)
+        h_lay.addStretch()
+        h_lay.addWidget(self.xxx_btn_tbl)
+        h_lay.addSpacing(10)
+        h_lay.addWidget(self.xxx_btn_geo)
+        h_lay2 = QHBoxLayout()
+        h_lay2.addWidget(self.xxx_font_box)
+        h_lay2.addStretch()
+        h_lay2.addWidget(self.xxx_font_size)
+        v_lay = QVBoxLayout(self)
+        v_lay.addLayout(h_lay)
+        v_lay.addLayout(h_lay2)
+        v_lay.addSpacing(20)
+        v_lay.addWidget(self.xxx_txt_edt)
+
+        self.tab_xxx.setLayout(v_lay)
         # -----------------------------------------------------
         self.geo_txt_edt = QPlainTextEdit()
-        self.geo_txt_edt.setFont(QFont("Consolas", 9))
+        self.geo_txt_edt.setFont(self.edt_font)
         self.geo_txt_edt.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.geo_txt_edt.highlighter = XMLHighlighter(self.geo_txt_edt.document())
         self.geo_txt_edt.setPlainText(self.base.geo_get())
@@ -111,6 +185,31 @@ class FixItGui(QWidget):
         self.hv_update_table()
         self.rad_update_table()
         self.xy_update_table()
+
+    def on_value_chg(self, value):
+        font: QFont = self.font()
+        font.setPointSize(value)
+        self.xxx_txt_edt.setFont(font)
+        # self.xxx_label_text.setFont(QFont(font.family(), value))
+
+    def on_font_filter_changed(self, index):
+        switcher = {
+            0: QFontComboBox.AllFonts,
+            1: QFontComboBox.ScalableFonts,
+            2: QFontComboBox.NonScalableFonts,
+            3: QFontComboBox.MonospacedFonts,
+            4: QFontComboBox.ProportionalFonts
+        }
+        self.xxx_font_box.setFontFilters(switcher.get(index))
+
+    def on_clk_tbl(self):
+        pass
+
+    def on_clk_geo(self):
+        pass
+
+    def on_font_changed(self, font):
+        self.xxx_txt_edt.setFont(QFont(font.family(), self.xxx_font_size.value()))
 
     @flow
     def db_s_box_get(self, val, prec, step, func):
@@ -208,12 +307,12 @@ class FixItGui(QWidget):
             s = "x {:.2f} y {:.2f} \nx {:.2f} y {:.2f}"
             fmt = s.format(item.start.x, item.start.y, item.end.x, item.end.y)
             self.xy_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
-            fmt2 = "Id: {} x {} y {}".format(item.geo_id, item.has_x, item.has_y)
+            fmt2 = "Id: {}\nx {} y {}".format(item.geo_id, item.has_x, item.has_y)
             w_item = QTableWidgetItem(fmt2)
             w_item.setTextAlignment(Qt.AlignCenter)
             self.xy_tbl_wid.setItem(0, 1, w_item)
             w_item = QTableWidgetItem('')
-            w_item.setData(Qt.EditRole, item.geo_id)
+            w_item.setData(Qt.DisplayRole, item.geo_id)
             xp('col 3', item.geo_id, **_rad.k(4))
             self.xy_tbl_wid.setItem(0, 2, w_item)
         self.xy_tbl_wid.setSortingEnabled(__sorting_enabled)
@@ -270,7 +369,7 @@ class FixItGui(QWidget):
             w_item.setTextAlignment(Qt.AlignCenter)
             self.rad_tbl_wid.setItem(0, 1, w_item)
             w_item = QTableWidgetItem('')
-            w_item.setData(Qt.EditRole, item.geo_id)
+            w_item.setData(Qt.DisplayRole, item.geo_id)
             xp('col 3', item.geo_id, **_rad.k(4))
             self.rad_tbl_wid.setItem(0, 2, w_item)
         self.rad_tbl_wid.setSortingEnabled(__sorting_enabled)
@@ -317,19 +416,19 @@ class FixItGui(QWidget):
             fmt2 = "x {:.2f} y {:.2f} : x {:.2f} y {:.2f}".format(item.pt_start.x, item.pt_start.y,
                                                                   item.pt_end.x, item.pt_end.y)
             xp('col 1', fmt2, **_hv_g.k(4))
-            fmt = "x {:.2f} y {:.2f} \nx {:.2f} y {:.2f}".format(item.pt_start.x, item.pt_start.y,
-                                                                 item.pt_end.x, item.pt_end.y)
+            fmt = "{: 6.2f} {: 6.2f}\n{: 6.2f} {: 6.2f}".format(item.pt_start.x, item.pt_start.y,
+                                                                item.pt_end.x, item.pt_end.y)
             self.hv_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
             fmt2 = "Id {} xa {:.2f} : ya {:.2f}".format(item.geo_idx + 1, item.x_angel, item.y_angel)
             xp('col 2', fmt2, **_hv_g.k(4))
-            fmt = "Id {} \nxa {:.2f} : ya {:.2f}".format(item.geo_idx + 1, item.x_angel, item.y_angel)
+            fmt = "Id {} \nxa {:.2f} ya {:.2f}".format(item.geo_idx + 1, item.x_angel, item.y_angel)
             w_item = QTableWidgetItem(fmt)
             w_item.setTextAlignment(Qt.AlignCenter)
             self.hv_tbl_wid.setItem(0, 1, w_item)
-            w_item = QTableWidgetItem('')
-            w_item.setData(Qt.EditRole, idx)
+            w_item2 = QTableWidgetItem()
+            w_item2.setData(Qt.DisplayRole, idx)
             xp('col 3', idx, ** _hv_g.k(4))
-            self.hv_tbl_wid.setItem(0, 2, w_item)
+            self.hv_tbl_wid.setItem(0, 2, w_item2)
         self.hv_tbl_wid.setSortingEnabled(__sorting_enabled)
 
     @flow
@@ -343,9 +442,9 @@ class FixItGui(QWidget):
     def coin_create(self):
         mod: QItemSelectionModel = self.coin_tbl_wid.selectionModel()
         rows: List[QModelIndex] = mod.selectedRows(2)
-        create_list: List[int] = [x.data() for x in rows]
+        create_list: List[int] = [x.data(Qt.DisplayRole) for x in rows]
         for idx in rows:
-            xp(idx.row(), ':', idx.data(), **_coin.k())
+            xp(idx.row(), ':', idx.data(Qt.DisplayRole), **_cog)
         self.base.coin_create(create_list)
         self.coin_update_table()
 
@@ -353,10 +452,10 @@ class FixItGui(QWidget):
     def coin_prep_table(self, obj: QGroupBox) -> QTableWidget:
         table_widget = QTableWidget(obj)
         table_widget.setColumnCount(3)
-        __table_widget_item = QTableWidgetItem(u"Point")
-        table_widget.setHorizontalHeaderItem(0, __table_widget_item)
-        __table_widget_item = QTableWidgetItem(u"Idx")
-        table_widget.setHorizontalHeaderItem(1, __table_widget_item)
+        w_item = QTableWidgetItem(u"Point")
+        table_widget.setHorizontalHeaderItem(0, w_item)
+        w_item = QTableWidgetItem(u"Idx")
+        table_widget.setHorizontalHeaderItem(1, w_item)
         self.__prep_table(table_widget)
         return table_widget
 
@@ -366,23 +465,21 @@ class FixItGui(QWidget):
         __sorting_enabled = self.coin_tbl_wid.isSortingEnabled()
         self.coin_tbl_wid.setSortingEnabled(False)
         pt_list: List[FixIt.Point] = self.base.points_get_list()
-        for i in range(len(pt_list)):
-            pt: FixIt.Point = pt_list[i]
+        # xp('pt list:', pt_list, **_cog)
+        for i, pt in enumerate(pt_list):
             if len(pt.coin_pts) == 1:
                 continue
             if len(pt.coin_pts) > 1:
-                xp(pt.geo_item_pt, " : ", pt.coin_pts, **_coin.k(4))
                 self.coin_tbl_wid.insertRow(0)
-                fmt = "{0:.2f} : {1:.2f}".format(pt.geo_item_pt.x, pt.geo_item_pt.y)
+                fmt = "{0: 6.2f} {1: 6.2f}".format(pt.geo_item_pt.x, pt.geo_item_pt.y)
                 self.coin_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
-                w_item = QTableWidgetItem('')
-                w_item.setData(Qt.EditRole, i)
-                self.cons_tbl_wid.setItem(0, 2, w_item)
-                fmt = ""
-                for j in range(len(pt.coin_pts)):
-                    cpt: FixIt.Point.CoinPt = pt.coin_pts[j]
-                    fmt += "{0}.{1}  ".format(cpt.geo_idx + 1, pt_typ_str[cpt.pt_type])
-                    self.coin_tbl_wid.setItem(0, 1, QTableWidgetItem(fmt))
+                fm = ''.join("{0:2}.{1} ".format(x.geo_idx + 1, x.pt_type) for x in pt.coin_pts)
+                xp('fm:', fm, **_cog)
+                self.coin_tbl_wid.setItem(0, 1, QTableWidgetItem(fm))
+                w_item = QTableWidgetItem()
+                w_item.setData(Qt.DisplayRole, i)
+                self.coin_tbl_wid.setItem(0, 2, w_item)
+                xp('new row: Id', i, fmt, fm, **_cog)
         self.coin_tbl_wid.setSortingEnabled(__sorting_enabled)
 
     @flow
@@ -410,10 +507,10 @@ class FixItGui(QWidget):
         for item in co_list:
             if typ == ConType.ALL or typ == ConType(item.type_id):
                 self.cons_tbl_wid.insertRow(0)
-                self.cons_tbl_wid.setItem(0, 0, QTableWidgetItem(str(item.type_id)))
+                self.cons_tbl_wid.setItem(0, 0, QTableWidgetItem(item.type_id))
                 self.cons_tbl_wid.setItem(0, 1, QTableWidgetItem(str(item)))
-                w_item = QTableWidgetItem('')
-                w_item.setData(Qt.EditRole, item.co_idx)
+                w_item = QTableWidgetItem()
+                w_item.setData(Qt.DisplayRole, item.co_idx)
                 self.cons_tbl_wid.setItem(0, 2, w_item)
         self.cons_tbl_wid.setSortingEnabled(__sorting_enabled)
 
@@ -454,6 +551,7 @@ class FixItGui(QWidget):
         hh: QHeaderView = tbl.horizontalHeader()
         hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         hh.setSectionResizeMode(1, QHeaderView.Stretch)
+        hh.setSectionResizeMode(2, QHeaderView.Stretch)
         vh: QHeaderView = tbl.verticalHeader()
         # noinspection PyArgumentList
         vh.setSectionResizeMode(QHeaderView.ResizeToContents)
@@ -464,6 +562,11 @@ class FixItGui(QWidget):
                     "border: none; " \
                     "}"
         tbl.setStyleSheet(tbl_style)
+        tbl.setFont(self.tbl_font)
+
+    @Slot(str)
+    def say_some_words(self, words):
+        xp('Constraints changed', words, **_cog)
 
 
 if __name__ == '__main__':

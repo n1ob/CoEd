@@ -1,5 +1,5 @@
 import math
-from enum import Enum
+from enum import Flag, auto
 from math import *
 from typing import List, NamedTuple, Set
 
@@ -7,59 +7,9 @@ import Part
 import Sketcher
 from FreeCAD import Base
 
-from tools import xp, flow, _cir, _xy, _hv, _co_build, _co_co, _geo, _prn_edge, xpe
-
-try:
-    SketcherType = Sketcher.SketchObject
-except AttributeError:
-    SketcherType = Sketcher.Sketch
-
-pt_typ_str = {
-    0: 'n',
-    1: 's',
-    2: 'e',
-    3: 'm'
-}
-
-
-class ConType(Enum):
-    NONE              = "None"
-    COINCIDENT        = "Coincident"
-    HORIZONTAL        = "Horizontal"
-    VERTICAL          = "Vertical"
-    PARALLEL          = "Parallel"
-    TANGENT           = "Tangent"
-    DISTANCE          = "Distance"
-    DISTANCEX         = "DistanceX"
-    DISTANCEY         = "DistanceY"
-    ANGLE             = "Angle"
-    PERPENDICULAR     = "Perpendicular"
-    RADIUS            = "Radius"
-    EQUAL             = "Equal"
-    POINTONOBJECT     = "PointOnObject"
-    SYMMETRIC         = "Symmetric"
-    INTERNALALIGNMENT = "InternalAlignment"
-    SNELLSLAW         = "SnellsLaw"
-    BLOCK             = "Block"
-    DIAMETER          = "Diameter"
-    WEIGHT            = "Weight"
-    ALL               = "All"
-
-
-class GeoPt(NamedTuple):
-    geo_id: int
-    type_id: str
-
-    def __str__(self):
-        return "GeoId {}.{}".format(self.geo_id, self.type_id)
-
-
-class ConsCoin(NamedTuple):
-    first: GeoPt
-    second: GeoPt
-
-    def __str__(self):
-        return "GeoIds {}, {}".format(self.first, self.second)
+from flags import Event
+from logger import xp, _co, _prn_edge, _co_co, _co_build, _hv, _xy, _cir, _geo, flow
+from tools import pt_typ_str, pt_typ_int, ConType, GeoPt, ConsCoin, SketcherType
 
 
 class FixIt:
@@ -75,9 +25,9 @@ class FixIt:
             return s.format(self.geo_id, self.center_x, self.center_y, self.angle_xu, self.radius)
 
     class Point:
-        def __init__(self, geo_item_pt: Base.Vector, geo_list_idx: int, pt_type: int):
+        def __init__(self, geo_item_pt: Base.Vector, geo_list_idx: int, pt_type: str):
             self.geo_item_pt: Base.Vector = geo_item_pt
-            self.coin_pts: List[FixIt.Point.CoinPt] = []
+            self.coin_pts: List[FixIt.Point.CoinPt] = list()
             self.extend(geo_list_idx, pt_type)
 
         def __str__(self):
@@ -85,13 +35,13 @@ class FixIt:
             return s.format(self.coin_pts[0].geo_idx, self.coin_pts[0].pt_type, self.geo_item_pt.x,
                             self.geo_item_pt.y, self.coin_pts)
 
-        def extend(self, geo_list_idx: int, pt_type: int):
+        def extend(self, geo_list_idx: int, pt_type: str):
             item = FixIt.Point.CoinPt(geo_list_idx, pt_type)
             self.coin_pts.append(item)
 
         class CoinPt(NamedTuple):
             geo_idx: int
-            pt_type: int
+            pt_type: str
 
             def __str__(self):
                 return "GeoId {}.{}".format(self.geo_idx, self.pt_type)
@@ -142,11 +92,19 @@ class FixIt:
                                    self.third + 1, self.third_pos,  # (4),(5)
                                    self.value, self.co_idx)  # (6),(7)
 
-    x_axis: Base.Vector = Base.Vector(1, 0, 0)
-    y_axis: Base.Vector = Base.Vector(0, 1, 0)
+    # x_axis: Base.Vector = Base.Vector(1, 0, 0)
+    # y_axis: Base.Vector = Base.Vector(0, 1, 0)
+
+    class Dirty(Flag):
+        hv_edges: auto()
+        xy_edges: auto()
+        coin_points: auto()
+        constraints: auto()
+        rad_circle: auto()
 
     @flow
-    def __init__(self, sk: SketcherType, snap_dist: float = 0, snap_angel: float = 0):
+    def __init__(self, sk: SketcherType, snap_dist: float = 0, snap_angel: float = 0, parent=None):
+        super().__init__()
         self.__init = False
         self.sketch: SketcherType = sk
         self.snap_dist: float = snap_dist
@@ -161,6 +119,8 @@ class FixIt:
         self.__coin_points_dirty: bool = True
         self.__constraints_dirty: bool = True
         self.__dbg_co_pts_list: List[str] = list()
+        self.ev = Event()
+        # self.ev.cons_chg.connect(say_some_words)
         self.__init = True
 
     @property
@@ -245,7 +205,6 @@ class FixIt:
                                      for x in co_list
                                      if x.type_id == 'DistanceY']
         xp('existing constrains GeoId: X', ' '.join(map(str, exist_x)), ' Y', ' '.join(map(str, exist_y)), **_xy.k())
-        xpe(_xy, 0, 'existing constrains GeoId: X', ' '.join(map(str, exist_x)), ' Y', ' '.join(map(str, exist_y)))
         geo_list = self.sketch.Geometry
         for idx, geo_item in enumerate(geo_list):
             if geo_item.TypeId == 'Part::GeomLineSegment':
@@ -304,8 +263,9 @@ class FixIt:
 
     ##############
     # Coincident
-    def __coin_add_point(self, geo_item_pt: Base.Vector, geo_list_idx: int, pt_type: int, tolerance: float, cs: Set[ConsCoin]):
-        xp("({:.2f}, {:.2f}) : Id {:n} : Type {:n}".format(geo_item_pt.x, geo_item_pt.y, geo_list_idx, pt_type),
+    def __coin_add_point(self, geo_item_pt: Base.Vector, geo_list_idx: int, pt_type: str, tolerance: float, cs: Set[
+        ConsCoin]):
+        xp("({:.2f}, {:.2f}) : Id {:n} : Type {}".format(geo_item_pt.x, geo_item_pt.y, geo_list_idx, pt_type),
            **_co_build.k(2))
         new_pt = FixIt.Point(geo_item_pt, geo_list_idx, pt_type)
         for i, pt in enumerate(self.__coin_points):
@@ -325,8 +285,8 @@ class FixIt:
         return col
 
     def __coin_consider(self, pt: Point, new_pt: Point, cs: Set[ConsCoin]) -> bool:
-        pn: GeoPt = GeoPt(new_pt.coin_pts[0].geo_idx, pt_typ_str[new_pt.coin_pts[0].pt_type])
-        pts: Set[GeoPt] = set(map(lambda x: GeoPt(x.geo_idx, pt_typ_str[x.pt_type]), pt.coin_pts))
+        pn: GeoPt = GeoPt(new_pt.coin_pts[0].geo_idx, new_pt.coin_pts[0].pt_type)
+        pts: Set[GeoPt] = set(map(lambda x: GeoPt(x.geo_idx, x.pt_type), pt.coin_pts))
         xp('CS :', str(cs), 'PN :', str(pn), 'PTS: ' + str(pts), **_co_co.k(4))
         if any(a.geo_id == pn.geo_id for a in pts):
             xp('any(a[0] == pn[0] for a in pts)', **_co_co.k(8))
@@ -349,13 +309,17 @@ class FixIt:
             if geo_list[i].TypeId == 'Part::GeomLineSegment':
                 start: Base.Vector = geo_list[i].StartPoint
                 end: Base.Vector = geo_list[i].EndPoint
-                self.__coin_add_point(start, i, 1, self.snap_dist, cs)
-                self.__coin_add_point(end, i, 2, self.snap_dist, cs)
+                self.__coin_add_point(start, i, pt_typ_str[1], self.snap_dist, cs)
+                self.__coin_add_point(end, i, pt_typ_str[2], self.snap_dist, cs)
 
     @flow
     def coin_create(self, pt_idx_list: List[int]):
+        xp('pt_idx_list', pt_idx_list, **_co)
+        if pt_idx_list is None:
+            return
         for idx in pt_idx_list:
-            pt = self.__coin_points[idx]
+            pt: FixIt.Point = self.__coin_points[idx]
+            xp('pt', pt.coin_pts, **_co)
             if len(pt.coin_pts) == 1:
                 continue
             if len(pt.coin_pts) > 1:
@@ -363,10 +327,13 @@ class FixIt:
                 for i in range(len(pt.coin_pts) - 1):
                     p1 = pt.coin_pts[i - 1]
                     p2 = pt.coin_pts[i]
-                    con = Sketcher.Constraint('Coincident', p1.geo_idx, p1.pt_type, p2.geo_idx, p2.pt_type)
+                    fmt = 'Coincident', p1.geo_idx, p1.pt_type, p2.geo_idx, p2.pt_type
+                    xp(fmt, **_co)
+                    con = Sketcher.Constraint('Coincident', p1.geo_idx, pt_typ_int[p1.pt_type], p2.geo_idx, pt_typ_int[p2.pt_type])
                     self.sketch.addConstraint(con)
                     self.__constraints_dirty = True
                     self.__coin_points_dirty = True
+                    self.ev.cons_chg.emit('uzhbzcwbicbicduiiucbidcbdibcdj')
 
     ##############
     # distances
@@ -375,9 +342,9 @@ class FixIt:
         obj = self.points_get_list()
         for pt in obj:
             self.sketch.addConstraint(Sketcher.Constraint(
-                'DistanceX', pt.coin_pts[0].geo_idx, pt.coin_pts[0].pt_type, pt.geo_item_pt.x))
+                'DistanceX', pt.coin_pts[0].geo_idx, pt_typ_int[pt.coin_pts[0].pt_type], pt.geo_item_pt.x))
             self.sketch.addConstraint(Sketcher.Constraint(
-                'DistanceY', pt.coin_pts[0].geo_idx, pt.coin_pts[0].pt_type, pt.geo_item_pt.y))
+                'DistanceY', pt.coin_pts[0].geo_idx, pt_typ_int[pt.coin_pts[0].pt_type], pt.geo_item_pt.y))
 
     ##############
     # diameters
@@ -409,7 +376,7 @@ class FixIt:
                     'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
                     'SECOND_POS': pt_typ_str[item.SecondPos],
-                    'FMT': "{0}.{1} : {2}.{3}"
+                    'FMT': "({0}.{1}) ({2}.{3})"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
@@ -421,7 +388,7 @@ class FixIt:
                     kwargs = {
                         'FIRST': item.First,
                         'FIRST_POS': pt_typ_str[item.FirstPos],
-                        'FMT': "{0}.{1}"
+                        'FMT': "({0}.{1})"
                     }
                 else:
                     kwargs = {
@@ -429,7 +396,7 @@ class FixIt:
                         'FIRST_POS': pt_typ_str[item.FirstPos],
                         'SECOND': item.Second,
                         'SECOND_POS': pt_typ_str[item.SecondPos],
-                        'FMT': "{0}.{1} : {2}.{3}"
+                        'FMT': "({0}.{1}) ({2}.{3})"
                     }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
@@ -439,7 +406,7 @@ class FixIt:
                 kwargs = {
                     'FIRST': item.First,
                     'SECOND': item.Second,
-                    'FMT': "{0} : {2}"
+                    'FMT': "({0}) ({2})"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
@@ -453,7 +420,7 @@ class FixIt:
                     'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
                     'SECOND_POS': pt_typ_str[item.SecondPos],
-                    'FMT': "{0}.{1} : {2}.{3}"
+                    'FMT': "({0}.{1}) ({2}.{3})"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
@@ -467,7 +434,7 @@ class FixIt:
                         'FIRST': item.First,
                         'FIRST_POS': pt_typ_str[item.FirstPos],
                         'VALUE': item.Value,
-                        'FMT': "{0}.{1}  v: {6:.2f}"
+                        'FMT': "({0}.{1})  v: {6:.2f}"
                     }
                 else:
                     kwargs = {
@@ -476,7 +443,7 @@ class FixIt:
                         'SECOND': item.Second,
                         'SECOND_POS': pt_typ_str[item.SecondPos],
                         'VALUE': item.Value,
-                        'FMT': "{0}.{1} : {2}.{3}  v: {6:.2f}"
+                        'FMT': "({0}.{1}) ({2}.{3})  v: {6:.2f}"
                     }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
@@ -491,7 +458,7 @@ class FixIt:
                     'SECOND': item.Second,
                     'SECOND_POS': pt_typ_str[item.SecondPos],
                     'VALUE': item.Value,
-                    'FMT': "{0}.{1} : {2}.{3}  v: {6:.2f}"
+                    'FMT': "({0}.{1}) ({2}.{3})  v: {6:.2f}"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
@@ -506,7 +473,7 @@ class FixIt:
                     'SECOND': item.Second,
                     'SECOND_POS': pt_typ_str[item.SecondPos],
                     'VALUE': math.degrees(item.Value),
-                    'FMT': "{0}.{1} : {2}.{3}  v: {6:.2f}"
+                    'FMT': "({0}.{1}) ({2}.{3})  v: {6:.2f}"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
@@ -516,7 +483,7 @@ class FixIt:
                 kwargs = {
                     'FIRST': item.First,
                     'VALUE': item.Value,
-                    'FMT': "{0}  v: {6:.2f}"
+                    'FMT': "({0})  v: {6:.2f}"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
@@ -527,7 +494,7 @@ class FixIt:
                     'FIRST': item.First,
                     'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
-                    'FMT': "{0}.{1} : {2}"
+                    'FMT': "({0}.{1}) ({2})"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
@@ -542,7 +509,7 @@ class FixIt:
                     'SECOND_POS': pt_typ_str[item.SecondPos],
                     'THIRD': item.Third,
                     'THIRD_POS': pt_typ_str[item.ThirdPos],
-                    'FMT': "{0}.{1} : {2}.{3} : {4}.{5}"
+                    'FMT': "({0}.{1}) ({2}.{3}) ({4}.{5})"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
@@ -556,7 +523,7 @@ class FixIt:
                     'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
                     'SECOND_POS': pt_typ_str[item.SecondPos],
-                    'FMT': "{0}.{1} : {2}.{3}"
+                    'FMT': "({0}.{1}) ({2}.{3})"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
@@ -570,7 +537,7 @@ class FixIt:
                     'SECOND_POS': pt_typ_str[item.SecondPos],
                     'THIRD': item.Third,
                     'THIRD_POS': pt_typ_str[item.ThirdPos],
-                    'FMT': "{0}.{1} : {2}.{3} : {4}.{5}"
+                    'FMT': "({0}.{1}) ({2}.{3}) ({4}.{5})"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
@@ -579,7 +546,7 @@ class FixIt:
                 # ConstraintType, GeoIndex
                 kwargs = {
                     'FIRST': item.First,
-                    'FMT': "{0}"
+                    'FMT': "({0})"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
                 self.__constraints.append(con)
