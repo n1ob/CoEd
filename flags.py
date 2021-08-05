@@ -2,6 +2,8 @@ from enum import Flag, auto
 
 from PySide2.QtCore import QObject, Signal
 
+from logger import sep
+
 
 class Event(QObject):
     # create a new signal on the fly and name it 'speak'
@@ -27,7 +29,7 @@ class FlagOps(Flag):
             return NotImplemented
         return self.__class__(self.value | other.value)
 
-    def clear(self, other):
+    def reset(self, other):
         if not isinstance(other, self.__class__):
             return NotImplemented
         return self.__class__(self.value & ~other.value)
@@ -42,13 +44,21 @@ class FlagOps(Flag):
             return NotImplemented
         return self.__class__(self.value ^ other.value)
 
+    def invert(self):
+        return self.__class__(~self.value)
+
 
 class Dirty(FlagOps):
+
+    @classmethod
+    def not_cons(cls):
+        return ~cls(Dirty.CONSTRAINTS)
 
     HV_EDGES = auto()
     XY_EDGES = auto()
     COIN_POINTS = auto()
     CONSTRAINTS = auto()
+
 
 
 if __name__ == '__main__':
@@ -63,7 +73,7 @@ if __name__ == '__main__':
     print(f1)
     f1 = Dirty.all()
     print(f1)
-    f1 = f1.clear(Dirty.CONSTRAINTS)
+    f1 = f1.reset(Dirty.CONSTRAINTS)
     print(f1)
     f1 = Dirty.none()
     print(f1)
@@ -85,7 +95,16 @@ if __name__ == '__main__':
         print(x.__class__)
         print(isinstance(x, Dirty))
 
-
+    sep()
+    # fff: Dirty = Dirty(~Dirty.CONSTRAINTS)
+    fff: Dirty = Dirty(1)
+    # fff = fff.set(Dirty.CONSTRAINTS)
+    print(fff)
+    fff = fff.not_cons()
+    # fff = fff.set(~Dirty.CONSTRAINTS)
+    print(fff)
+    # fff = fff.invert()
+    # print(fff)
 
 
 

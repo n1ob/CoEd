@@ -37,9 +37,16 @@ def xp(*args, **kwargs):
     prepend: str = kwargs.pop('prepend', '   ')
     append: str = kwargs.pop('append', None)
     topic: str = kwargs.pop('topic', '')
+    flow_dir: int = kwargs.pop('flow', -1)
     indent = GLB_IND
     # args = ['xx ' '{}' ' xx'.format(i) for i in args]
     args = list(args)
+    if flow_dir == -1:
+        args[0] = '| {}'.format(args[0])
+    elif flow_dir == 0:
+        args[0] = '|   {}'.format(args[0])
+    elif flow_dir == 1:
+        args[0] = '|-> {}'.format(args[0])
     _ind = add_ind
     if indent > 0:
         _ind += indent
@@ -68,37 +75,38 @@ def xpt(*args):
 GLB_SHORT: bool = True
 GLB_IND: int = -2
 
-_cogx = xpc('coin_g', 'ui ')
-_cog = _cogx.k()
-_cox = xpc('coin', 'co ')
-_co = _cox.k()
-_hv_g = xpc('hv_g', 'ui ')
-_rad = xpc('rad_g', 'ui ')
-_lay = xpc('lay_g', 'ui ')
+_co_gx = xpc('coincident_g', 'cog')
+_co_g = _co_gx.k()
+_co_x = xpc('coincident', 'co ')
+_co = _co_x.k()
+
+_cs_x = xpc('constraint', 'cs ')
+_cs = _cs_x.k()
+
+_cf_x = xpc('config', 'cf ')
+_cf = _cf_x.k()
+
+_hv_gx = xpc('hor_vert_g', 'hvg')
+_hv_x = xpc('hor_vert', 'hv ')
+
+_xy_x = xpc('xy_dist', 'xy ')
+_rd_gx = xpc('radius_g', 'rdg')
+_ly_gx = xpc('layout_g', 'lyg')
+_ly_g = _ly_gx.k()
+
 _prn_edge = xpc('edge', 'eg ')
-_co_co = xpc('consider_coin', 'cc ')
+_co_co = xpc('consider_coincident', 'cc ')
 _co_build = xpc('co_build', 'cb ')
-_hv = xpc('hv', 'hv ')
-_xy = xpc('xy', 'xy ')
 _cir = xpc('circle', 'cr ')
 _geo = xpc('geo_list', 'ge ')
-_confx = xpc('config', 'cf ')
-_cf = _confx.k()
-xpt('flow')
+
 xpt('')
+xpt('flow')
 xpt('config')
-# xpt('xy')
-xpt('coin_g')
-xpt('coin')
-# xpt('hv_g')
-# xpt('rad_g')
-# xpt('lay_g')
-# xpt('circle')
-# xpt('geo_list')
-# xpt('edge')
-# xpt('consider_coin')
-# xpt('hv')
-# xpt('co_build')
+xpt('coincident_g')
+xpt('coincident')
+xpt('constraint')
+xpt('layout_g')
 
 
 def flow(_func=None, *, off=False, short=False):
@@ -107,7 +115,6 @@ def flow(_func=None, *, off=False, short=False):
         def wrapper_flow(*args, **kwargs):
             global GLB_IND
             kw = {'topic': 'flow'}
-            # kw = {'topic': 'flow', 'indent': GLB_IND}
             if off:
                 obj = func(*args, **kwargs)
             elif short or GLB_SHORT:
@@ -115,7 +122,8 @@ def flow(_func=None, *, off=False, short=False):
                 nam = func.__qualname__.split('.')
                 f = nam[len(nam) - 1]
                 p = '.'.join(x for x in nam if x is not f)
-                xp('|-> {}  ({})'.format(f, p), **kw)
+                kw = {'topic': 'flow', 'flow': 1}
+                xp('{}  ({})'.format(f, p), **kw)
                 obj = func(*args, **kwargs)
                 GLB_IND -= 2
             else:
@@ -123,9 +131,11 @@ def flow(_func=None, *, off=False, short=False):
                 args_repr = [repr(a) for a in args]
                 kwargs_repr = [f"{k}={v!r}" for k, v in kwargs.items()]
                 signature = ", ".join(args_repr + kwargs_repr)
-                xp(f"|-> {func.__name__} ({signature})", **kw)
+                kw = {'topic': 'flow', 'flow': 1}
+                xp(f"{func.__name__} ({signature})", **kw)
                 obj = func(*args, **kwargs)
-                xp(f"|   {func.__name__}  ->  {obj!r}", **kw)
+                kw = {'topic': 'flow', 'flow': 0}
+                xp(f"{func.__name__}  ->  {obj!r}", **kw)
                 # xp(f"|   {func.__name__!r}  ->  {obj!r}", **kw)
                 GLB_IND -= 2
             return obj

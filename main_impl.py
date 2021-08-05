@@ -8,7 +8,7 @@ import Sketcher
 from FreeCAD import Base
 
 from flags import Event
-from logger import xp, _co, _prn_edge, _co_co, _co_build, _hv, _xy, _cir, _geo, flow
+from logger import xp, _co, _prn_edge, _co_co, _co_build, _hv_x, _xy_x, _cir, _geo, flow, _cs
 from tools import pt_typ_str, pt_typ_int, ConType, GeoPt, ConsCoin, SketcherType
 
 
@@ -120,7 +120,6 @@ class FixIt:
         self.__constraints_dirty: bool = True
         self.__dbg_co_pts_list: List[str] = list()
         self.ev = Event()
-        # self.ev.cons_chg.connect(say_some_words)
         self.__init = True
 
     @property
@@ -204,7 +203,7 @@ class FixIt:
         exist_y: List[(int, int)] = [(x.first, x.second)
                                      for x in co_list
                                      if x.type_id == 'DistanceY']
-        xp('existing constrains GeoId: X', ' '.join(map(str, exist_x)), ' Y', ' '.join(map(str, exist_y)), **_xy.k())
+        xp('existing constrains GeoId: X', ' '.join(map(str, exist_x)), ' Y', ' '.join(map(str, exist_y)), **_xy_x.k())
         geo_list = self.sketch.Geometry
         for idx, geo_item in enumerate(geo_list):
             if geo_item.TypeId == 'Part::GeomLineSegment':
@@ -212,7 +211,7 @@ class FixIt:
                 ed: FixIt.XyEdge = FixIt.XyEdge(idx, Base.Vector(seg.StartPoint), Base.Vector(seg.EndPoint),
                                                 ((idx, idx) in exist_x), ((idx, idx) in exist_y))
                 self.__xy_edges.append(ed)
-        [xp(xy_edge, **_xy.k()) for xy_edge in self.__xy_edges]
+        [xp(xy_edge, **_xy_x.k()) for xy_edge in self.__xy_edges]
         self.__xy_edges_dirty = False
 
     ###############
@@ -237,7 +236,7 @@ class FixIt:
         self.__hv_edges.clear()
         co_list: List[FixIt.Constraint] = self.constraints_get_list()
         existing: List[int] = [x.first for x in co_list if (x.type_id == 'Horizontal') or (x.type_id == 'Vertical')]
-        xp('existing constrains GeoId:', ' '.join(map(str, existing)), **_hv.k())
+        xp('existing constrains GeoId:', ' '.join(map(str, existing)), **_hv_x.k())
         geo_list = self.sketch.Geometry
         for idx, geo_item in enumerate(geo_list):
             if geo_item.TypeId == 'Part::GeomLineSegment':
@@ -360,12 +359,14 @@ class FixIt:
 
     ##############
     # Constraint
-    @flow
+    # @flow(off=True)
     def constraints_detect(self):
         self.__constraints_dirty = False
         self.__constraints.clear()
         # noinspection PyUnresolvedReferences
         co_list: list = self.sketch.Constraints
+        xp('co_lst', _cs, **_cs)
+        xp('co_lst', co_list, **_cs)
         for i in range(len(co_list)):
             item = co_list[i]
             ct: ConType = ConType(item.Type)
@@ -376,6 +377,7 @@ class FixIt:
                     'FIRST_POS': pt_typ_str[item.FirstPos],
                     'SECOND': item.Second,
                     'SECOND_POS': pt_typ_str[item.SecondPos],
+
                     'FMT': "({0}.{1}) ({2}.{3})"
                 }
                 con = self.Constraint(i, ct.value, **kwargs)
