@@ -4,6 +4,8 @@ import threading
 
 from FreeCADTypes import Sketcher
 
+from logger import xps
+
 try:
     SketcherType = Sketcher.SketchObject
 except AttributeError:
@@ -70,6 +72,28 @@ class Singleton:
         return cls._instance
 
 
+def get_class_that_defined_method(method):
+    method_name = method.__name__
+    if method.__self__:
+        classes = [method.__self__.__class__]
+    else:
+        classes = [method.im_class]
+    while classes:
+        c = classes.pop()
+        if method_name in c.__dict__:
+            return c
+        else:
+            classes = list(c.__bases__) + classes
+    return None
+
+
+def seq_gen(start=1, step=1):
+    num = start
+    while True:
+        yield num
+        num += step
+
+xps(__name__)
 if __name__ == '__main__':
 
     s1 = Singleton()

@@ -1,7 +1,69 @@
+from datetime import datetime
 import functools
 import sys
-from typing import Set
+from typing import Set, List
 
+
+'''
+>>> import dis
+>>> add = lambda x, y: x + y
+>>> type(add)
+<class 'function'>
+>>> dis.dis(add)
+  1           0 LOAD_FAST                0 (x)
+              2 LOAD_FAST                1 (y)
+              4 BINARY_ADD
+              6 RETURN_VALUE
+>>> add
+<function <lambda> at 0x7f30c6ce9ea0>
+
+(lambda x:
+(x % 2 and 'odd' or 'even'))(3)
+'odd'
+(lambda x:
+(x % 2 and 'odd' or 'even'))(4)
+'even'
+
+>>> (lambda x, y, z: x + y + z)(1, 2, 3)
+6
+>>> (lambda x, y, z=3: x + y + z)(1, 2)
+6
+>>> (lambda x, y, z=3: x + y + z)(1, y=2)
+6
+>>> (lambda *args: sum(args))(1,2,3)
+6
+>>> (lambda **kwargs: sum(kwargs.values()))(one=1, two=2, three=3)
+6
+>>> (lambda x, *, y=0, z=0: x + y + z)(1, y=2, z=3)
+6
+
+def fullname(o):
+    # o.__module__ + "." + o.__class__.__qualname__ is an example in
+    # this context of H.L. Mencken's "neat, plausible, and wrong."
+    # Python makes no guarantees as to whether the __module__ special
+    # attribute is defined, so we take a more circumspect approach.
+    # Alas, the module name is explicitly excluded from __qualname__
+    # in Python 3.
+
+    print(inspect.signature(o))
+    for x in inspect.getmembers(o):
+        print(x)
+    module = o.__class__.__module__
+    print('o'.ljust(30), o)
+    print('o.__class__'.ljust(30), o.__class__)
+    print('o.__name__'.ljust(30), o.__name__)
+    if hasattr(o, '__module__'):
+        print('o.__module__'.ljust(30), o.__module__)
+    print('o.__class__.__module__'.ljust(30), o.__class__.__module__)
+    print('o.__class__.__name__'.ljust(30), o.__class__.__name__)
+
+
+    if module is None or module == str.__class__.__module__:
+        return o.__class__.__name__  # Avoid reporting __builtin__
+    else:
+        return module + '.' + o.__class__.__name__
+
+'''
 
 class XpConf:
 
@@ -13,6 +75,7 @@ class XpConf:
         self.append = append
         self.topic = topic
         self.separator = separator
+        self.logfile = False
 
     def k(self, add_ind: int = 0) -> dict:
         d: dict = dict()
@@ -31,82 +94,54 @@ class XpConf:
         return d
 
 
-def xp(*args, **kwargs):
+def xp(*args, **kwargs) -> None:
     global GLB_IND
+    global GLB_LOG
     add_ind: int = kwargs.pop('add_indent', 0)
     prepend: str = kwargs.pop('prepend', '   ')
     append: str = kwargs.pop('append', None)
     topic: str = kwargs.pop('topic', '')
+    _pre = prepend.ljust(3)
+    _topic: List[str] = topic.split('.')
     flow_dir: int = kwargs.pop('flow', -1)
     indent = GLB_IND
     # args = ['xx ' '{}' ' xx'.format(i) for i in args]
     args = list(args)
+    ai = ''
+    if add_ind > 0:
+        ai = ' ' * add_ind
     if flow_dir == -1:
-        args[0] = '| {}'.format(args[0])
+        args[0] = '| {}{}'.format(ai, args[0])
     elif flow_dir == 0:
         args[0] = '|   {}'.format(args[0])
     elif flow_dir == 1:
         args[0] = '|-> {}'.format(args[0])
-    _ind = add_ind
     if indent > 0:
-        _ind += indent
-    if _ind > 0:
-        args.insert(0, ' ' * (_ind - 1))
+        args.insert(0, ' ' * (indent - 1))
     if prepend is not None:
-        args.insert(0, prepend)
+        args.insert(0, _pre)
     if append is not None:
         args.append(append)
     # print(*args, **kwargs, sep='-')
-    if topic in XpConf.topics:
+    # if topic in XpConf.topics:
+    if not XpConf.topics.isdisjoint(_topic):
         print(*args, **kwargs)
-
-def sep():
-    print('------------------------------------')
-
-
-def xpc(*args):
-    return XpConf(args[0], args[1])
+        if GLB_LOG:
+            with open('../../AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log', 'a') as file:
+                file.write(' '.join(f'{x}' for x in args))
+                file.write('\n')
 
 
-def xpt(*args):
-    XpConf.topics.add(args[0])
+def xps(*args: object, **kwargs: object) -> None:
+    xp(f"---{' '.join(f'{x}' for x in args)}----------------------------------------", **kwargs)
 
 
-GLB_SHORT: bool = True
-GLB_IND: int = -2
-
-_co_gx = xpc('coincident_g', 'cog')
-_co_g = _co_gx.k()
-_co_x = xpc('coincident', 'co ')
-_co = _co_x.k()
-
-_cs_x = xpc('constraint', 'cs ')
-_cs = _cs_x.k()
-
-_cf_x = xpc('config', 'cf ')
-_cf = _cf_x.k()
-
-_hv_gx = xpc('hor_vert_g', 'hvg')
-_hv_x = xpc('hor_vert', 'hv ')
-
-_xy_x = xpc('xy_dist', 'xy ')
-_rd_gx = xpc('radius_g', 'rdg')
-_ly_gx = xpc('layout_g', 'lyg')
-_ly_g = _ly_gx.k()
-
-_prn_edge = xpc('edge', 'eg ')
-_co_co = xpc('consider_coincident', 'cc ')
-_co_build = xpc('co_build', 'cb ')
-_cir = xpc('circle', 'cr ')
-_geo = xpc('geo_list', 'ge ')
-
-xpt('')
-xpt('flow')
-xpt('config')
-xpt('coincident_g')
-xpt('coincident')
-xpt('constraint')
-xpt('layout_g')
+def xp_eof():
+    xp('')
+    xp('')
+    xps(f'{datetime.now().hour}:{datetime.now().minute:02}:{datetime.now().second}')
+    xp('')
+    xp('')
 
 
 def flow(_func=None, *, off=False, short=False):
@@ -114,16 +149,20 @@ def flow(_func=None, *, off=False, short=False):
         @functools.wraps(func)
         def wrapper_flow(*args, **kwargs):
             global GLB_IND
-            kw = {'topic': 'flow'}
+            _flow['flow'] = -1
             if off:
                 obj = func(*args, **kwargs)
             elif short or GLB_SHORT:
                 GLB_IND += 2
-                nam = func.__qualname__.split('.')
+                if hasattr(func, '__qualname__'):
+                    nam = func.__qualname__.split('.')
+                else:
+                    nam = func.__name__
                 f = nam[len(nam) - 1]
                 p = '.'.join(x for x in nam if x is not f)
-                kw = {'topic': 'flow', 'flow': 1}
-                xp('{}  ({})'.format(f, p), **kw)
+                _flow['flow'] = 1
+                # kw = {'topic': 'flow', 'flow': 1}
+                xp('{}  ({})'.format(f, p), **_flow)
                 obj = func(*args, **kwargs)
                 GLB_IND -= 2
             else:
@@ -131,11 +170,13 @@ def flow(_func=None, *, off=False, short=False):
                 args_repr = [repr(a) for a in args]
                 kwargs_repr = [f"{k}={v!r}" for k, v in kwargs.items()]
                 signature = ", ".join(args_repr + kwargs_repr)
-                kw = {'topic': 'flow', 'flow': 1}
-                xp(f"{func.__name__} ({signature})", **kw)
+                _flow['flow'] = 1
+                # kw = {'topic': 'flow', 'flow': 1}
+                xp(f"{func.__name__} ({signature})", **_flow)
                 obj = func(*args, **kwargs)
-                kw = {'topic': 'flow', 'flow': 0}
-                xp(f"{func.__name__}  ->  {obj!r}", **kw)
+                _flow['flow'] = 0
+                # kw = {'topic': 'flow', 'flow': 0}
+                xp(f"{func.__name__}  ->  {obj!r}", **_flow)
                 # xp(f"|   {func.__name__!r}  ->  {obj!r}", **kw)
                 GLB_IND -= 2
             return obj
@@ -146,6 +187,66 @@ def flow(_func=None, *, off=False, short=False):
         return decorator_flow(_func)
 
 
+def sep(*args):
+    print(f'----{args}---')
+
+
+def xpt(*args):
+    [XpConf.topics.add(x) for x in args]
+
+
+GLB_SHORT: bool = True
+GLB_IND: int = -2
+GLB_LOG: bool = True
+
+xpt('', 'flow')
+
+topics = {
+     'co_g'  : XpConf('coincident.gui', 'cog').k(),
+     'co'    : XpConf('coincident.impl', 'co').k(),
+     'cs_g'  : XpConf('constraint.gui', 'csg').k(),
+     'cs'    : XpConf('constraint.impl', 'cs').k(),
+     'cf_g'  : XpConf('config.gui', 'cfg').k(),
+     'cf'    : XpConf('config.impl', 'cf').k(),
+     'hv_g'  : XpConf('hor_vert.gui', 'hvg').k(),
+     'hv'    : XpConf('hor_vert.impl', 'hv').k(),
+     'xy_g'  : XpConf('xy_dist.gui', 'xyg').k(),
+     'xy'    : XpConf('xy_dist.impl', 'xy').k(),
+     'rd_g'  : XpConf('radius.gui', 'rdg').k(),
+     'rd'    : XpConf('radius.impl', 'rd').k(),
+     'ly_g'  : XpConf('layout.gui', 'lyg').k(),
+     'fl'    : XpConf('flow.flags', 'fl').k(),
+     'pr_edg': XpConf('edge', 'eg').k(),
+     'co_co' : XpConf('consider_coin', 'cc').k(),
+     'co_bld': XpConf('co_build', 'cb').k(),
+     'cir'   : XpConf('circle', 'cr').k(),
+     'geo'   : XpConf('geo_list', 'ge').k(),
+     'flo'   : XpConf('flow').k()
+}
+
+_co_g = topics['co_g']
+_co = topics['co']
+_cs_g = topics['cs_g']
+_cs = topics['cs']
+_cf_g = topics['cf_g']
+_cf = topics['cf']
+_hv_g = topics['hv_g']
+_hv = topics['hv']
+_xy_g = topics['xy_g']
+_xy = topics['xy']
+_rd_g = topics['rd_g']
+_rd = topics['rd']
+_ly_g = topics['ly_g']
+_fl = topics['fl']
+
+_prn_edge = topics['pr_edg']
+_co_co = topics['co_co']
+_co_build = topics['co_bld']
+_cir = topics['cir']
+_geo = topics['geo']
+_flow = topics['flo']
+
+xps(__name__)
 if __name__ == '__main__':
 
     XpConf.topics.add('flow')

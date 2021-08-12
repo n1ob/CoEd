@@ -1,182 +1,295 @@
-import functools
 import json
 import threading
-from typing import Dict, List
+from typing import Dict, Set
 
-from PySide2.QtGui import QFont
+from PySide2.QtCore import QByteArray, QDataStream, QIODevice
+from PySide2.QtGui import QFont, QFontDatabase
+from PySide2.QtWidgets import QApplication
 
-from logger import flow, sep, _cf, xp
-
-flow_off = False
-
-
-@flow(off=flow_off)
-class _CfgCls:
-
-    names: Dict = dict()
-
-    def __init__(self, cls):
-        _CfgCls.names[cls.__name__] = cls
+from logger import flow, xp, xps, xp_eof
 
 
-@flow(off=flow_off)
-def _singleton(cls):
-    """Make a class a Singleton class (only one instance)"""
-    @functools.wraps(cls)
-    def wrapper_singleton(*args, **kwargs):
-        xp(cls.__name__, cls, _cf)
-        if not wrapper_singleton.instance:
-            wrapper_singleton.instance = cls(*args, **kwargs)
-            Cfg.__handlers[cls.__name__] = wrapper_singleton.instance
-        return wrapper_singleton.instance
-    wrapper_singleton.instance = None
-    return wrapper_singleton
+def cfg_decorator(cls):
+    xp('def decorator')
+    cls._cfg_class = cls
+    return cls
 
 
-@flow(off=flow_off)
-@_singleton
-@_CfgCls
-class CfgFonts:
-    @flow(off=flow_off)
+class CfgBase:
+
+    @flow
     def __init__(self):
-        self.__cfg_store: Dict = dict()
-        self.FONT_TABLE: str = 'tbl'
-        self.FONT_GEO_EDT: str = 'geo'
-        self.names: List[str] = [self.FONT_TABLE, self.FONT_GEO_EDT]
-        self.def_font = QFont('Consolas', 9)
+        xp('__init__ once', self)
+        self.data: Dict = dict()
 
-    @flow(off=flow_off)
-    def serialize(self, func):
-        func('fonts', self.__cfg_store)
+    @staticmethod
+    def cfg_classes():
+        return CfgBase.__cfg_classes
 
-    @flow(off=flow_off)
-    def deserialize(self, func):
-        self.__cfg_store = func('fonts')
+    @property
+    def data(self):
+        return self.__data
 
-    @flow(off=flow_off)
-    def set(self, key: str, fon: QFont):
-        if key in self.names:
-            self.__cfg_store[key] = {'name': fon.family(), 'size': fon.pointSize()}
+    @data.setter
+    def data(self, value):
+        self.__data = value
+
+    @flow
+    def __new__(cls, *args, **kwargs):
+        xp('__new__', cls, args)
+        # ! singleton
+        if not cls.__instance:
+            with cls.__lock:
+                cls.__instance = super(CfgBase, cls).__new__(cls, *args, **kwargs)
+                xp('New instance created', cls.__instance)
+        else:
+            # ! init once per inst
+            def init_pass(self, *dt, **mp):
+                pass
+            cls.__init__ = init_pass
+        # ! otf collect cfg classes
+        if hasattr(cls, '_cfg_class'):
+            cls.__instance.__cfg_classes.add(cls)
+        return cls.__instance
+
+    @flow
+    def data_load(self):
+        self.data = Cfg.persist_load(self)
+
+    @flow
+    def data_save(self):
+        Cfg.persist_save(self, self.data)
+
+    xp('class CfgBase body')
+    __instance = None
+    __lock = threading.Lock()
+    __cfg_classes: Set = set()
+
+
+class Cfg(CfgBase):
+    class PersistJson(CfgBase):
+
+        @flow
+        def __init__(self):
+            xp('__init__ once', self)
+            super().__init__()
+            self.load()
+
+        # no flow
+        def __del__(self):
+            pass
+
+        @flow
+        def get(self, key):
+            xp('get', key)
+            if key in self.data.keys():
+                return self.data[key]
+            return dict()
+
+        @flow
+        def set(self, key, val):
+            xp('set', key, val)
+            self.data[key] = val
+
+        @flow
+        def load(self):
+            # todo load from file
+            #  C:\Users\red\PycharmProjects\FreeCad\log.log
+            #  C:\Users\red\AppData\Roaming\JetBrains\PyCharmCE2021.2\scratches\notebook.txt
+            try:
+                with open('../../AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/coed_config.json', 'r') as file:
+                    self.data = json.load(file)
+            except FileNotFoundError as err:
+                xp(err)
+            xp('load', self.data)
+
+        @flow
+        def save(self):
+            # todo save to file
+            with open('../../AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/coed_config.json', 'w') as file:
+                json.dump(self.data, file)
+            xp('save', self.data)
+
+    @staticmethod
+    def persist_load(self):
+        xp('persist_load', self.__class__.__name__)
+        persist = Cfg.PersistJson()
+        persist.load()
+        # return persist.get(self.__class__.__name__)
+
+    @staticmethod
+    def persist_save(self):
+        xp('persist_save', self.__class__.__name__)
+        persist = Cfg.PersistJson()
+        persist.save()
+        # persist.set(self.__class__.__name__, val)
+
+    @flow
+    def __init__(self):
+        xp('__init__ once', self)
+        super().__init__()
+        # ! inject the funcs directly into cfg classes or use base class funcs
+        # for x in _NAMES.values():
+        #    x.load = Cfg.persist_load
+        #    x.save = Cfg.persist_save
+        # ! don't need this for now
+        # self.inst = [x() for x in _NAMES.values()]
+        # xps(self.inst)
+        xp('__init__ done', self)
+
+    xp('class Cfg body')
+
+
+@cfg_decorator
+class CfgColor(CfgBase):
+
+    @flow
+    def __init__(self):
+        xp('__init__ once', self)
+        super().__init__()
+
+    @flow
+    def get(self, key):
+        xp(self.data)
+        if key in self.data.keys():
+            return self.data[key]
+
+    @flow
+    def set(self, key, val):
+        self.data[key] = val
+
+    @flow
+    def deserialize(self):
+        xp('deserialize:', self)
+        self.data_load()
+
+    @flow
+    def serialize(self):
+        xp('serialize:', self)
+        self.data_save()
+
+    xp('class CfgColor body')
+
+
+@cfg_decorator
+class CfgFonts(CfgBase):
+
+    @flow
+    def __init__(self):
+        xp('__init__ once', self)
+        super().__init__()
+
+    @flow
+    def get(self, key):
+        xp(self.data)
+        if key in self.data.keys():
+            return self.data[key]
+        return None
+
+    @flow
+    def set(self, key, val):
+        self.data[key] = val
+
+    @flow
+    def load(self):
+        xp('deserialize:', self)
+        self.data_load()
+
+    @flow
+    def save(self):
+        xp('serialize:', self)
+        self.data_save()
+
+    @flow
+    def font_set(self, key, f: QFont):
+        if key in CfgFonts.__names:
+            qb = QByteArray()
+            out = QDataStream(qb, QIODevice.WriteOnly)
+            out << f
+            qb64: QByteArray() = qb.toBase64()
+            dec = bytes(qb64).decode('UTF-8')
+            self.set(key, dec)
         else:
             raise ValueError
 
-    @flow(off=flow_off)
-    def get(self, key: str) -> QFont:
-        if key in self.__cfg_store:
-            fo: dict = self.__cfg_store[key]   # = {'name': font.family(), 'size': font.pointSize()}
-            return QFont(fo['name'], fo['size'])
-        else:
-            return CfgFonts.def_font
+    @flow
+    def font_get(self, key: str) -> QFont:
+        if key in CfgFonts.__names:
+            dec = self.get(key)
+            if dec is None:
+                return CfgFonts.__font_def
+            enc = dec.encode('UTF-8')
+            qb = QByteArray.fromBase64(enc)
+            stream = QDataStream(qb, QIODevice.ReadOnly)
+            font = QFont()
+            stream >> font
+            return font
+        raise ValueError
 
+    @flow
+    def font_get_default(self) -> QFont:
+        self.font_def = CfgFonts.__font_def
+        return self.font_def
 
-@flow(off=flow_off)
-class Cfg:
-    @flow(off=flow_off)
-    class CfgJson:
-        @flow(off=flow_off)
-        def __init__(self):
-            self.__store: Dict = dict()
-            self.load()
+    FONT_TABLE_CONS: str = 'font_tbl_cons'
+    FONT_TABLE_COIN: str = 'font_tbl'
+    FONT_TABLE_HV: str = 'font_tbl'
+    FONT_TABLE_XY: str = 'font_tbl'
+    FONT_TABLE_RAD: str = 'font_tbl'
+    FONT_GEO_EDT: str = 'font_geo_edt'
+    __names: Set[str] = [FONT_GEO_EDT, FONT_TABLE_RAD, FONT_TABLE_XY,
+                         FONT_TABLE_HV, FONT_TABLE_COIN, FONT_TABLE_CONS]
+    __font_def = QFont('Consolas', 9)
+    xp('class CfgFonts body')
 
-        @flow(off=flow_off)
-        def load(self):
-            try:
-                with open('../../AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/coed_config.json', 'r') as file:
-                    self.__store = json.load(file)
-            except FileNotFoundError as err:
-                xp(err, _cf)
-
-        @flow(off=flow_off)
-        def dump(self):
-            with open('../../AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/coed_config.json', 'w') as file:
-                json.dump(self.__store, file)
-
-        @flow(off=flow_off)
-        def add(self, key: str, val: object):
-            self.__store[key] = val
-
-        @flow(off=flow_off)
-        def get(self, key: str) -> object:
-            if key in self.__store.keys():
-                return self.__store[key]
-            return None
-
-        @flow(off=flow_off)
-        def clear(self):
-            self.__store = dict()
-
-    __class_insts: Dict = dict()
-    __handlers: Dict = dict()
-    __single_instance = None
-    __lock = threading.Lock()
-
-    @flow(off=flow_off)
-    def __init__(self):
-        self.my_json = Cfg.CfgJson()
-        for j, k in _CfgCls.names.items():
-            Cfg.__class_insts[j] = k()
-            xp(_CfgCls.names, _cf)
-        self.load()
-
-    @flow(off=flow_off)
-    def __new__(cls, *args, **kwargs):
-        if not cls.__single_instance:
-            with cls.__lock:
-                cls.__single_instance = super().__new__(cls)
-        return cls.__single_instance
-
-    @flow(off=flow_off)
-    def exit(self):
-        self.save()
-        self.my_json.dump()
-
-    @flow(off=flow_off)
-    def load(self):
-        for name in Cfg.__handlers.keys():
-            Cfg.__handlers[name].deserialize(self.my_json.get)
-
-    @flow(off=flow_off)
-    def save(self):
-        for name in Cfg.__handlers:
-            Cfg.__handlers[name].serialize(self.my_json.add)
-
-    @flow(off=flow_off)
-    def get_inst(self):
-        return Cfg.__class_insts
-
-
-cfg: Cfg = Cfg()
-
-
+xps(__name__)
 if __name__ == '__main__':
 
-    font = QFont('Blubber', 19)
-    sep()
-    ff = None
-    for key in _CfgCls.names.keys():
-        fo = _CfgCls.names[key]
-        xp(key, fo, _cf)
-        ff = fo()
-    sep()
-    xp(ff, _cf)
-    sep()
-    ins = cfg.get_inst()
-    for x, y in ins.items():
-        xp(x, y, _cf)
+    def xxx():
+        xps('xxx')
+        xp(hasattr(CfgFonts, '_cfg_class'))
+        if hasattr(a1, '_cfg_class'):
+            xp(a1._cfg_class)
+        xp('cfg_classes', list(CfgBase.cfg_classes()))
 
 
-    # fo.set(fo.FONT_TABLE, font)
-    # fo.set(fo.FONT_GEO_EDT, fo.def_font)
-    # cfg.save()
-    # cfg.exit()
-    # cfg.load()
-    # print(fo.get(fo.FONT_TABLE))
+    font1 = QFont('Consolas', 9)
+    font2 = QFont('Blubber', 19)
 
-    # s = json.dumps(fonts, indent=2, separators=(", ", ": "))
-    # print(s)
-    # s = json.dumps(fonts, indent=2, separators=(",", ":"))
-    # print(s)
+    xps('deco end')
+    xps('Cfg')
+    cfg = Cfg()
+    xps('a1')
+
+    a1 = CfgFonts()
+    a1.load()
+    f = a1.font_get(CfgFonts.FONT_GEO_EDT)
+    xp(f)
+    a1.font_set(CfgFonts.FONT_GEO_EDT, font2)
+    a2 = CfgFonts()
+    f2 = a2.font_get(CfgFonts.FONT_GEO_EDT)
+    xp(f2)
+
+    xxx()
+
+
+    # xp(a1.get(CfgFonts.F1))
+    # a1.set('font2', {'f2': 'bwcbcbjbj'})
+    # a1.serialize()
+    # a1.deserialize()
+    # xp(a1.get('font2'))
+
+    # xps('a2')
+    # a2 = CfgFonts()
+    # xp(isinstance(a2, CfgFonts), a2)
+    # xp(a2.deserialize())
+    # xp('cfg_classes', list(CfgBase.cfg_classes()))
+    # xps('b1')
+    # b1 = CfgColor()
+    # xp(isinstance(b1, CfgColor), b1)
+    # xp(b1.deserialize())
+    # xp('cfg_classes', list(CfgBase.cfg_classes()))
 
 
 
-
+    xp_eof()

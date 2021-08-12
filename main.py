@@ -3,17 +3,15 @@
    PyCharm: see https://www.jetbrains.com/help/pycharm/stubs.html
 
 """
-import sys
 
-import FreeCAD as App
 import FreeCADGui as Gui
-import Sketcher
-from PySide2.QtWidgets import QApplication, QTableWidget
+from PySide2.QtWidgets import QApplication
 
+from config import Cfg
+from logger import xp_eof, xps
 from main_impl import FixIt
 from main_gui import FixItGui
 from style import my_style
-from logger import xp, flow
 from tools import SketcherType
 
 try:
@@ -52,21 +50,6 @@ def main_t(sketch: SketcherType = None):  # param used for test and dbg
         c.snap_dist = 1.01
         c.snap_angel = 5
         # detect_missing_pt_on_pt(c.snap_dist, sketch)
-        # c.print_geo()
-        # c.detect_missing_coincident()
-        # c.detect_missing_h_v()
-        # c.print_coincident_list()
-        # c.print_build_co_pts()
-        # c.print_edge_angel_list()
-
-        # print("-------------------------------------------------")
-        # c.make_coincident()
-        # c.make_hor_vert()
-        # c.make_diameters()
-        # print("-------------------------------------------------")
-        # c.detect_constraints()
-        # c.print_constraints()
-        c.print_geo()
         # App.ActiveDocument.recompute()
     else:
         print("No Sketch")
@@ -80,10 +63,10 @@ def main_t(sketch: SketcherType = None):  # param used for test and dbg
     ex.tabs.setCurrentIndex(0)
     # ex.resize(ex.sizeHint())
     app.exec_()
-    # print("after exec")
-    # sys.exit(app.exec_())
 
-
+    ex.cfg.persist_save()
+    xps(__name__)
+    xp_eof()
 if __name__ == '__main__':
     main_t()
 
