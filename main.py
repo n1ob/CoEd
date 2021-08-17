@@ -1,16 +1,15 @@
 """
    generated stubs with the help of https://github.com/ostr00000/freecad-stubs
    PyCharm: see https://www.jetbrains.com/help/pycharm/stubs.html
-
 """
 
 import FreeCADGui as Gui
 from PySide2.QtWidgets import QApplication
 
 from config import Cfg
-from logger import xp_eof, xps
-from main_impl import FixIt
-from main_gui import FixItGui
+from logger import xps
+from main_gui import CoEdGui
+from main_impl import CoEd
 from style import my_style
 from tools import SketcherType
 
@@ -29,7 +28,7 @@ def get_sketch() -> SketcherType:
         if sel[0].TypeId == 'Sketcher::SketchObject':
             return sel[0]
 
-
+# ! don't need this for now
 def detect_missing_pt_on_pt(snap_dist, sketch):
     print("\n>>>> detect_missing_pt_on_pt -----------------------------")
     s = str(sketch.detectMissingPointOnPointConstraints(snap_dist))
@@ -40,33 +39,35 @@ def detect_missing_pt_on_pt(snap_dist, sketch):
     print("<<<< detect_missing_pt_on_pt ------------------------------\n")
 
 
-def main_t(sketch: SketcherType = None):  # param used for test and dbg
+def main_t(sketch: SketcherType = None):  # param used for unittest
 
     if sketch is None:
         sketch = get_sketch()
-    # print("-------------------------------------------------")
-    if sketch is not None:
-        c = FixIt(sketch)
-        c.snap_dist = 1.01
-        c.snap_angel = 5
-        # detect_missing_pt_on_pt(c.snap_dist, sketch)
-        # App.ActiveDocument.recompute()
     else:
-        print("No Sketch")
+        app = QApplication([])
 
-    app = QApplication([])
-    my_style(app)
-    ex = FixItGui(c)
-    ex.show()
-    # get TableWidget to update geometry
-    ex.tabs.setCurrentIndex(1)
-    ex.tabs.setCurrentIndex(0)
-    # ex.resize(ex.sizeHint())
-    app.exec_()
+    if sketch is not None:
+        try:
+            c = CoEd(sketch)
+            c.snap_dist = 1.01
+            c.snap_angel = 5
+            my_style(app)
+            ex = CoEdGui(c)
+            ex.show()
+            # get TableWidget to update geometry
+            ex.tabs.setCurrentIndex(1)
+            ex.tabs.setCurrentIndex(0)
+            app.exec_()
+        finally:
+            Cfg().save()
+            pass
+    else:
+        raise ValueError("No Sketch selected")
 
-    ex.cfg.persist_save()
     xps(__name__)
-    xp_eof()
+# detect_missing_pt_on_pt(c.snap_dist, sketch)
+# App.ActiveDocument.recompute()
+
 if __name__ == '__main__':
     main_t()
 

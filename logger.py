@@ -1,8 +1,8 @@
-from datetime import datetime
 import functools
+import pathlib
 import sys
+from datetime import datetime
 from typing import Set, List
-
 
 '''
 >>> import dis
@@ -65,8 +65,8 @@ def fullname(o):
 
 '''
 
-class XpConf:
 
+class XpConf:
     topics: Set[str] = set()
 
     def __init__(self, topic='', prepend=None, std_err=False, separator=None, append=None):
@@ -95,8 +95,12 @@ class XpConf:
 
 
 def xp(*args, **kwargs) -> None:
+    global GLB_HEADER
     global GLB_IND
     global GLB_LOG
+    if GLB_HEADER:
+        GLB_HEADER = False
+        _xp_header()
     add_ind: int = kwargs.pop('add_indent', 0)
     prepend: str = kwargs.pop('prepend', '   ')
     append: str = kwargs.pop('append', None)
@@ -127,7 +131,9 @@ def xp(*args, **kwargs) -> None:
     if not XpConf.topics.isdisjoint(_topic):
         print(*args, **kwargs)
         if GLB_LOG:
-            with open('../../AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log', 'a') as file:
+            # '../../AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/'
+            # C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log
+            with open('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log', 'a') as file:
                 file.write(' '.join(f'{x}' for x in args))
                 file.write('\n')
 
@@ -136,12 +142,23 @@ def xps(*args: object, **kwargs: object) -> None:
     xp(f"---{' '.join(f'{x}' for x in args)}----------------------------------------", **kwargs)
 
 
-def xp_eof():
+def _xp_header(val=None):
+    if val is None:
+        val = pathlib.Path().resolve()
     xp('')
     xp('')
-    xps(f'{datetime.now().hour}:{datetime.now().minute:02}:{datetime.now().second}')
+    xps(f'{datetime.now().hour}:{datetime.now().minute:02}:{datetime.now().second} --- {val}')
+    # xp(f'{__file__}')
     xp('')
     xp('')
+
+
+def sep(*args):
+    print(f'----{args}---')
+
+
+def _xpt(*args):
+    [XpConf.topics.add(x) for x in args]
 
 
 def flow(_func=None, *, off=False, short=False):
@@ -180,48 +197,47 @@ def flow(_func=None, *, off=False, short=False):
                 # xp(f"|   {func.__name__!r}  ->  {obj!r}", **kw)
                 GLB_IND -= 2
             return obj
+
         return wrapper_flow
+
     if _func is None:
         return decorator_flow
     else:
         return decorator_flow(_func)
 
 
-def sep(*args):
-    print(f'----{args}---')
-
-
-def xpt(*args):
-    [XpConf.topics.add(x) for x in args]
-
-
-GLB_SHORT: bool = True
+# ! shorter form for flow
+GLB_SHORT: bool = False
+# ! don't change
 GLB_IND: int = -2
+# !shut up switch
 GLB_LOG: bool = True
+# ! print the header once
+GLB_HEADER: bool = True
 
-xpt('', 'flow')
+_xpt('', 'flow', 'layout')
 
 topics = {
-     'co_g'  : XpConf('coincident.gui', 'cog').k(),
-     'co'    : XpConf('coincident.impl', 'co').k(),
-     'cs_g'  : XpConf('constraint.gui', 'csg').k(),
-     'cs'    : XpConf('constraint.impl', 'cs').k(),
-     'cf_g'  : XpConf('config.gui', 'cfg').k(),
-     'cf'    : XpConf('config.impl', 'cf').k(),
-     'hv_g'  : XpConf('hor_vert.gui', 'hvg').k(),
-     'hv'    : XpConf('hor_vert.impl', 'hv').k(),
-     'xy_g'  : XpConf('xy_dist.gui', 'xyg').k(),
-     'xy'    : XpConf('xy_dist.impl', 'xy').k(),
-     'rd_g'  : XpConf('radius.gui', 'rdg').k(),
-     'rd'    : XpConf('radius.impl', 'rd').k(),
-     'ly_g'  : XpConf('layout.gui', 'lyg').k(),
-     'fl'    : XpConf('flow.flags', 'fl').k(),
-     'pr_edg': XpConf('edge', 'eg').k(),
-     'co_co' : XpConf('consider_coin', 'cc').k(),
-     'co_bld': XpConf('co_build', 'cb').k(),
-     'cir'   : XpConf('circle', 'cr').k(),
-     'geo'   : XpConf('geo_list', 'ge').k(),
-     'flo'   : XpConf('flow').k()
+    'co_g': XpConf('all.coincident.gui', 'cog').k(),
+    'co': XpConf('all.coincident.impl', 'co').k(),
+    'cs_g': XpConf('all.constraint.gui', 'csg').k(),
+    'cs': XpConf('all.constraint.impl', 'cs').k(),
+    'cf_g': XpConf('all.config.gui', 'cfg').k(),
+    'cf': XpConf('all.config.impl', 'cf').k(),
+    'hv_g': XpConf('all.hor_vert.gui', 'hvg').k(),
+    'hv': XpConf('all.hor_vert.impl', 'hv').k(),
+    'xy_g': XpConf('all.xy_dist.gui', 'xyg').k(),
+    'xy': XpConf('all.xy_dist.impl', 'xy').k(),
+    'rd_g': XpConf('all.radius.gui', 'rdg').k(),
+    'rd': XpConf('all.radius.impl', 'rd').k(),
+    'ly_g': XpConf('all.layout.gui', 'lyg').k(),
+    'fl': XpConf('all.flags', 'fl').k(),
+    'pr_edg': XpConf('all.edge', 'eg').k(),
+    'co_co': XpConf('all.consider_coin', 'cc').k(),
+    'co_bld': XpConf('all.co_build', 'cb').k(),
+    'cir': XpConf('all.circle', 'cr').k(),
+    'geo': XpConf('all.geo_list', 'ge').k(),
+    'flo': XpConf('all.flow').k()
 }
 
 _co_g = topics['co_g']
@@ -248,14 +264,15 @@ _flow = topics['flo']
 
 xps(__name__)
 if __name__ == '__main__':
-
     XpConf.topics.add('flow')
+
 
     @flow
     def addition_func(x):
         return x + x
 
-    c = XpConf('test', 'ooo', True, '*', 'xxx')
+
+    c = XpConf('all.test', 'ooo', True, '*', 'xxx')
     XpConf.topics.add('test')
     XpConf.topics.add('')
 

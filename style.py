@@ -2,6 +2,9 @@ from PySide2.QtCore import QRegExp, Qt
 from PySide2.QtGui import QSyntaxHighlighter, QColor, QTextCharFormat, QPalette
 from PySide2.QtWidgets import QStyleFactory
 
+from config import CfgColors
+from logger import xps
+
 
 class XMLHighlighter(QSyntaxHighlighter):
     """
@@ -10,50 +13,34 @@ class XMLHighlighter(QSyntaxHighlighter):
     # noinspection PyArgumentList
     def __init__(self, parent=None):
         super().__init__(parent)
-        # material color tool
-        red = QColor('#b71c1c')  # red
-        pink = QColor('#880e4f')  # pink
-        purple = QColor('#aa00ff')  # purple
-        deep_purple = QColor('#311b92')  # deep purple
-        indigo = QColor('#3d5afe')  # indigo
-        blue = QColor('#0d47a1')  # blue
-        light_blue = QColor('#01579b')  # light blue
-        cyan = QColor('#00b8d4')  # cyan
-        teal = QColor('#004d40')  # teal
-        green = QColor('#1b5e20')  # green
-        light_green = QColor('#64dd17')  # light green
-        lime = QColor('#827717')  # lime
-        yellow = QColor('#f57f17')  # yellow
-        amber = QColor('#ff6f00')  # amber
-        orange = QColor('#e65100')  # orange
-        deep_orange = QColor('#bf360c')  # deep orange
+        cfg = CfgColors()
 
         self.highlight_rules = list()
         xml_elem_format = QTextCharFormat()
-        xml_elem_format.setForeground(green)
+        xml_elem_format.setForeground(cfg.color_get(CfgColors.COLOR_XML_ELEM))
         self.highlight_rules.append((QRegExp("\\b[A-Za-z0-9_]+(?=[\s/>])"), xml_elem_format))
 
         xml_attr_format = QTextCharFormat()
         xml_attr_format.setFontItalic(True)
-        xml_attr_format.setForeground(indigo)
+        xml_attr_format.setForeground(cfg.color_get(CfgColors.COLOR_XML_ATTR))
         self.highlight_rules.append((QRegExp("\\b[A-Za-z0-9_]+(?=\\=)"), xml_attr_format))
         self.highlight_rules.append((QRegExp("="), xml_attr_format))
 
         self.value_format = QTextCharFormat()
-        self.value_format.setForeground(light_green)
+        self.value_format.setForeground(cfg.color_get(CfgColors.COLOR_XML_VAL))
         self.value_start_expr = QRegExp("\"")
         self.value_end_expr = QRegExp("\"(?=[\s></])")
 
         single_line_comment_format = QTextCharFormat()
-        single_line_comment_format.setForeground(cyan)
+        single_line_comment_format.setForeground(cfg.color_get(CfgColors.COLOR_XML_LN_CMT))
         self.highlight_rules.append((QRegExp("<!--[^\n]*-->"), single_line_comment_format))
 
         text_format = QTextCharFormat()
-        text_format.setForeground(teal)
+        text_format.setForeground(cfg.color_get(CfgColors.COLOR_XML_TXT))
         self.highlight_rules.append((QRegExp(">(.+)(?=</)"), text_format))
 
         keyword_format = QTextCharFormat()
-        keyword_format.setForeground(light_blue)
+        keyword_format.setForeground(cfg.color_get(CfgColors.COLOR_XML_KEYWORD))
         keyword_patterns = ["\\b?xml\\b", "/>", ">", "<", "</"]
         self.highlight_rules += [(QRegExp(pattern), keyword_format) for pattern in keyword_patterns]
 
@@ -106,3 +93,5 @@ def my_style(app):
     palette.setColor(QPalette.HighlightedText, Qt.white)
     palette.setColor(QPalette.Disabled, QPalette.HighlightedText, QColor(127, 127, 127))
     app.setPalette(palette)
+
+xps(__name__)

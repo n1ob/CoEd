@@ -7,7 +7,7 @@ from PySide2.QtWidgets import QComboBox, QWidget, QVBoxLayout, QPlainTextEdit, Q
     QAbstractItemView, QHeaderView, QGroupBox, QDoubleSpinBox, QCheckBox, QBoxLayout
 
 from config import CfgFonts
-from main_impl import FixIt
+from main_impl import CoEd
 from tools import ConType
 from style import XMLHighlighter, my_style
 from logger import xp, _co_g, _hv_g, _rd_g, flow, _ly_g, xps
@@ -16,21 +16,22 @@ _QL = QBoxLayout
 
 
 # noinspection PyArgumentList
-class FixItGui(QWidget):
+class CoEdGui(QWidget):
     # Constraint, Coincident, Horizontal/Vertical
     # Rad()ius, X/Y (Distance)
     @flow(short=True)
-    def __init__(self, base: FixIt, parent=None):
+    def __init__(self, base: CoEd, parent=None):
         super().__init__(parent)
-        self.base: FixIt = base
+        self.base: CoEd = base
         flags: Qt.WindowFlags = Qt.Window
         flags |= Qt.WindowStaysOnTopHint
         self.setWindowFlags(flags)
         self.resize(600, 800)
-        self.cfg_fnt = CfgFonts()
-        self.cfg_fnt.load()
-        self.tbl_font = QFont("Consolas", 9)
-        self.edt_font = self.cfg_fnt.font_get(CfgFonts.FONT_GEO_EDT)
+        self.cfg_fnts = CfgFonts()
+        self.cfg_fnts.load()
+        self.tbl_font = self.cfg_fnts.font_get(CfgFonts.FONT_TABLE)
+        self.geo_edt_font = self.cfg_fnts.font_get(CfgFonts.FONT_GEO_EDT)
+        self.cfg_edt_font = self.cfg_fnts.font_get(CfgFonts.FONT_CFG_EDT)
 
         self.tabs = QTabWidget(None)
         self.tab_cons = QWidget(None)
@@ -60,28 +61,32 @@ class FixItGui(QWidget):
         self.tab_geo.setLayout(self.geo_lay_get())
         # -----------------------------------------------------
         self.xy_grp_box: QGroupBox = QGroupBox(None)
-        self.xy_p_btn: QPushButton = QPushButton()
+        self.xy_btn_create: QPushButton = QPushButton()
+        self.xy_btn_create.setDisabled(True)
         self.xy_tbl_wid: QTableWidget = QTableWidget()
         self.tab_xy.setLayout(self.xy_lay_get())
         # -----------------------------------------------------
         self.rad_grp_box: QGroupBox = QGroupBox(None)
         self.rad_chk_box: QCheckBox = QCheckBox()
         self.rad_dbl_sp_box: QDoubleSpinBox = QDoubleSpinBox()
-        self.rad_p_btn: QPushButton = QPushButton()
+        self.rad_btn_create: QPushButton = QPushButton()
+        self.rad_btn_create.setDisabled(True)
         self.rad_tbl_wid: QTableWidget = QTableWidget()
         self.tab_rad.setLayout(self.rad_lay_get())
         # -----------------------------------------------------
         self.hv_grp_box: QGroupBox = QGroupBox(None)
         self.hv_lbl: QLabel = QLabel()
         self.hv_dbl_sp_box: QDoubleSpinBox = QDoubleSpinBox()
-        self.hv_p_btn: QPushButton = QPushButton()
+        self.hv_btn_create: QPushButton = QPushButton()
+        self.hv_btn_create.setDisabled(True)
         self.hv_tbl_wid: QTableWidget = QTableWidget()
         self.tab_hv.setLayout(self.hv_lay_get())
         # -----------------------------------------------------
         self.coin_grp_box: QGroupBox = QGroupBox(None)
         self.coin_lbl: QLabel = QLabel()
         self.coin_dbl_sp_box: QDoubleSpinBox = QDoubleSpinBox()
-        self.coin_p_btn: QPushButton = QPushButton()
+        self.coin_btn_create: QPushButton = QPushButton()
+        self.coin_btn_create.setDisabled(True)
         self.coin_tbl_wid: QTableWidget = QTableWidget()
         self.tab_coin.setLayout(self.coin_lay_get())
         # -----------------------------------------------------
@@ -89,7 +94,7 @@ class FixItGui(QWidget):
         self.cons_lbl_con: QLabel = QLabel()
         self.cons_tbl_wid: QTableWidget = QTableWidget()
         self.cons_cmb_box: QComboBox = QComboBox()
-        self.cons_p_btn: QPushButton = QPushButton()
+        self.cons_btn_del: QPushButton = QPushButton()
         self.tab_cons.setLayout(self.cons_lay_get())
         # -----------------------------------------------------
         main_layout = QVBoxLayout()
@@ -116,17 +121,17 @@ class FixItGui(QWidget):
         self.cfg_filter_cmb.addItems(['all fonts', 'scalable', 'non-scalable', 'monospace', 'equal prop'])
         self.cfg_filter_cmb.currentIndexChanged.connect(self.on_cfg_fnt_fil_chg)
         self.cfg_filter_cmb.setMaximumWidth(200)
-        self.cfg_txt_edt.setFont(self.edt_font)
+        self.cfg_txt_edt.setFont(self.cfg_edt_font)
         self.cfg_txt_edt.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.cfg_txt_edt.highlighter = XMLHighlighter(self.cfg_txt_edt.document())
         self.cfg_txt_edt.setPlainText(self.base.geo_xml_get())
-        self.cfg_font_box.setCurrentFont(self.edt_font)
+        self.cfg_font_box.setCurrentFont(self.cfg_edt_font)
         self.cfg_font_box.currentFontChanged.connect(self.on_cfg_fnt_box_chg)
         self.cfg_font_box.setMaximumWidth(300)
-        self.cfg_font_size.valueChanged.connect(self.on_cfg_fnt_size_val_chg)
         self.cfg_font_size.setRange(6, 32)
         self.cfg_font_size.setSingleStep(1)
-        self.cfg_font_size.setValue(9)
+        self.cfg_font_size.setValue(self.cfg_edt_font.pointSize())
+        self.cfg_font_size.valueChanged.connect(self.on_cfg_fnt_size_val_chg)
         self.cfg_btn_geo.clicked.connect(self.on_cfg_btn_clk_geo)
         self.cfg_btn_tbl.clicked.connect(self.on_cfg_btn_clk_tab)
         self.cfg_btn_load.clicked.connect(self.on_cfg_btn_clk_load)
@@ -141,7 +146,7 @@ class FixItGui(QWidget):
 
     @flow
     def geo_lay_get(self) -> QBoxLayout:
-        self.geo_txt_edt.setFont(self.edt_font)
+        self.geo_txt_edt.setFont(self.geo_edt_font)
         self.geo_txt_edt.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.geo_txt_edt.highlighter = XMLHighlighter(self.geo_txt_edt.document())
         self.geo_txt_edt.setPlainText(self.base.geo_xml_get())
@@ -152,13 +157,14 @@ class FixItGui(QWidget):
     @flow
     def xy_lay_get(self) -> QBoxLayout:
         self.xy_grp_box.setTitle(u"X/Y Distance")
-        self.xy_p_btn.clicked.connect(self.on_xy_create_btn_clk)
-        self.xy_p_btn.setText(u"Create")
+        self.xy_btn_create.clicked.connect(self.on_xy_create_btn_clk)
+        self.xy_btn_create.setText(u"Create")
         self.xy_tbl_wid = self.xy_prep_table(self.xy_grp_box)
+        self.xy_tbl_wid.itemSelectionChanged.connect(self.on_xy_tbl_sel_chg)
         # noinspection PyArgumentList
         li = [QVBoxLayout(), self.xy_grp_box,
               [QVBoxLayout(self.xy_grp_box),
-               [QHBoxLayout(), _QL.addStretch, self.xy_p_btn],
+               [QHBoxLayout(), _QL.addStretch, self.xy_btn_create],
                self.xy_tbl_wid]]
         return self.lay_get(li)
 
@@ -169,13 +175,14 @@ class FixItGui(QWidget):
         self.rad_grp_box.setTitle(u"Radius")
         self.rad_dbl_sp_box = self.db_s_box_get(self.base.radius, 1, 0.1, self.on_rad_val_chg)
         self.rad_chk_box.setChecked(True)
-        self.rad_p_btn.clicked.connect(self.on_rad_create_btn_clk)
-        self.rad_p_btn.setText(u"Create")
+        self.rad_btn_create.clicked.connect(self.on_rad_create_btn_clk)
+        self.rad_btn_create.setText(u"Create")
         self.rad_tbl_wid: QTableWidget = self.rad_prep_table(self.rad_grp_box)
+        self.rad_tbl_wid.itemSelectionChanged.connect(self.on_rad_tbl_sel_chg)
         # noinspection PyArgumentList
         li = [QVBoxLayout(), self.rad_grp_box,
               [QVBoxLayout(self.rad_grp_box),
-               [QHBoxLayout(), self.rad_chk_box, self.rad_dbl_sp_box, _QL.addStretch, self.rad_p_btn],
+               [QHBoxLayout(), self.rad_chk_box, self.rad_dbl_sp_box, _QL.addStretch, self.rad_btn_create],
                self.rad_tbl_wid]]
         return self.lay_get(li)
 
@@ -184,13 +191,14 @@ class FixItGui(QWidget):
         self.hv_grp_box.setTitle(u"Horizontal/Vertical")
         self.hv_lbl.setText(u"Snap Angle")
         self.hv_dbl_sp_box = self.db_s_box_get(self.base.snap_angel, 1, 0.1, self.on_hv_snap_val_chg)
-        self.hv_p_btn.clicked.connect(self.on_hv_create_btn_clk)
-        self.hv_p_btn.setText(u"Create")
+        self.hv_btn_create.clicked.connect(self.on_hv_create_btn_clk)
+        self.hv_btn_create.setText(u"Create")
         self.hv_tbl_wid = self.hv_prep_table(self.hv_grp_box)
+        self.hv_tbl_wid.itemSelectionChanged.connect(self.on_hv_tbl_sel_chg)
         # noinspection PyArgumentList
         li = [QVBoxLayout(), self.hv_grp_box,
               [QVBoxLayout(self.hv_grp_box),
-               [QHBoxLayout(), self.hv_lbl, self.hv_dbl_sp_box, _QL.addStretch, self.hv_p_btn],
+               [QHBoxLayout(), self.hv_lbl, self.hv_dbl_sp_box, _QL.addStretch, self.hv_btn_create],
                self.hv_tbl_wid]]
         return self.lay_get(li)
 
@@ -199,13 +207,14 @@ class FixItGui(QWidget):
         self.coin_grp_box.setTitle(u"Coincident")
         self.coin_lbl.setText(u"Snap Dist")
         self.coin_dbl_sp_box = self.db_s_box_get(self.base.snap_dist, 2, 0.1, self.on_coin_snap_val_chg)
-        self.coin_p_btn.clicked.connect(self.on_coin_create_btn_clk)
-        self.coin_p_btn.setText(u"Create")
+        self.coin_btn_create.clicked.connect(self.on_coin_create_btn_clk)
+        self.coin_btn_create.setText(u"Create")
         self.coin_tbl_wid = self.coin_prep_table(self.coin_grp_box)
+        self.coin_tbl_wid.itemSelectionChanged.connect(self.on_coin_tbl_sel_chg)
         # noinspection PyArgumentList
         li = [QVBoxLayout(), self.coin_grp_box,
               [QVBoxLayout(self.coin_grp_box),
-               [QHBoxLayout(), self.coin_lbl, self.coin_dbl_sp_box, _QL.addStretch, self.coin_p_btn],
+               [QHBoxLayout(), self.coin_lbl, self.coin_dbl_sp_box, _QL.addStretch, self.coin_btn_create],
                self.coin_tbl_wid]]
         return self.lay_get(li)
 
@@ -214,14 +223,16 @@ class FixItGui(QWidget):
         self.cons_grp_box.setTitle(u"Constraints")
         self.cons_lbl_con.setText(u"Type")
         self.cons_tbl_wid = self.cons_prep_table(self.cons_grp_box)
+        self.cons_tbl_wid.itemSelectionChanged.connect(self.on_cons_tbl_sel_chg)
         self.cons_cmb_box = self.cons_prep_combo()
         self.cons_cmb_box.currentTextChanged.connect(self.on_cons_type_cmb_chg)
-        self.cons_p_btn.clicked.connect(self.on_cons_delete_btn_clk)
-        self.cons_p_btn.setText(u"Create")
+        self.cons_btn_del.clicked.connect(self.on_cons_delete_btn_clk)
+        self.cons_btn_del.setText(u"Create")
+        self.cons_btn_del.setDisabled(True)
         # noinspection PyArgumentList
         li = [QVBoxLayout(), self.cons_grp_box,
               [QVBoxLayout(self.cons_grp_box),
-               [QHBoxLayout(), self.cons_lbl_con, self.cons_cmb_box, _QL.addStretch, self.cons_p_btn],
+               [QHBoxLayout(), self.cons_lbl_con, self.cons_cmb_box, _QL.addStretch, self.cons_btn_del],
                self.cons_tbl_wid]]
         return self.lay_get(li)
 
@@ -272,8 +283,19 @@ class FixItGui(QWidget):
         xp('Constraints changed', words, **_co_g)
 
     @flow
-    def on_cur_tab_chg(self, i: int):
-        xp('cur_tab:', i, **_ly_g)
+    def on_cur_tab_chg(self, index: int):
+        xp('cur_tab:', index, **_ly_g)
+        switcher = {
+            0: self.cons_update_table,
+            1: self.coin_update_table,
+            2: self.hv_update_table,
+            3: self.rad_update_table,
+            4: self.xy_update_table,
+            5: '',
+            6: ''
+        }
+        if index in range(5):
+            switcher.get(index)()
 
     # ---------
 
@@ -295,47 +317,72 @@ class FixItGui(QWidget):
         f.setPointSize(value)
         xp('new', f, 'old', self.cfg_txt_edt.font(), **_ly_g)
         self.cfg_txt_edt.setFont(f)
+        self.cfg_fnts.font_set(self.cfg_fnts.FONT_CFG_EDT, self.cfg_txt_edt.font())
 
     @flow
     def on_cfg_fnt_box_chg(self, font: QFont):
         xp('fnt', font, **_ly_g)
-        f: QFont = self.cfg_txt_edt.font()
-        font.setPointSize(f.pointSize())
+        # ! some mysterious problem forcing to do the following
+        a_font = QFont()
+        a_font.fromString(font.toString())
+        a_font.setPointSize(self.cfg_font_size.value())
         xp('new', font, 'old', self.cfg_txt_edt.font(), **_ly_g)
-        self.cfg_txt_edt.setFont(font)
+        self.cfg_txt_edt.setFont(a_font)
         xp('after', self.cfg_txt_edt.font(), **_ly_g)
+        self.cfg_fnts.font_set(self.cfg_fnts.FONT_CFG_EDT, self.cfg_txt_edt.font())
 
     @flow
     def on_cfg_btn_clk_tab(self):
         xp('tab', '', 'cfg', self.cfg_txt_edt.font(), **_ly_g)
-        # self.geo_txt_edt.setFont(self.cfg_txt_edt.font())
-        self.cfg_fnt.font_set(CfgFonts.FONT_TABLE_CONS, self.cfg_txt_edt.font())
+        self.cons_tbl_wid.setFont(self.cfg_txt_edt.font())
+        self.coin_tbl_wid.setFont(self.cfg_txt_edt.font())
+        self.hv_tbl_wid.setFont(self.cfg_txt_edt.font())
+        self.xy_tbl_wid.setFont(self.cfg_txt_edt.font())
+        self.rad_tbl_wid.setFont(self.cfg_txt_edt.font())
+        self.cfg_fnts.font_set(CfgFonts.FONT_TABLE, self.cfg_txt_edt.font())
 
     @flow
     def on_cfg_btn_clk_geo(self):
         xp('geo', self.geo_txt_edt.font(), 'cfg', self.cfg_txt_edt.font(), **_ly_g)
         self.geo_txt_edt.setFont(self.cfg_txt_edt.font())
-        self.cfg_fnt.font_set(CfgFonts.FONT_GEO_EDT, self.cfg_txt_edt.font())
+        self.cfg_fnts.font_set(CfgFonts.FONT_GEO_EDT, self.geo_txt_edt.font())
 
     @flow
     def on_cfg_btn_clk_load(self):
-        self.cfg_fnt.load()
-        f_tbl: QFont = self.cfg_fnt.get(self.cfg_fnt.FONT_TABLE_CONS)
-        f_geo: QFont = self.cfg_fnt.get(self.cfg_fnt.FONT_GEO_EDT)
+        self.cfg_fnts.load()
+        f_tbl: QFont = self.cfg_fnts.font_get(self.cfg_fnts.FONT_TABLE)
+        f_geo: QFont = self.cfg_fnts.font_get(self.cfg_fnts.FONT_GEO_EDT)
+        f_cfg: QFont = self.cfg_fnts.font_get(self.cfg_fnts.FONT_CFG_EDT)
+        self.cons_tbl_wid.setFont(f_tbl)
+        self.coin_tbl_wid.setFont(f_tbl)
+        self.hv_tbl_wid.setFont(f_tbl)
+        self.xy_tbl_wid.setFont(f_tbl)
+        self.rad_tbl_wid.setFont(f_tbl)
         self.geo_txt_edt.setFont(f_geo)
-        self.cfg_txt_edt.setFont(f_geo)
-        # todo load font for tables
+        self.cfg_txt_edt.setFont(f_cfg)
+        xp('geo', f_geo, 'cfg', f_cfg, **_ly_g)
+        self.cfg_font_box.setCurrentFont(f_cfg)
+        self.cfg_font_size.setValue(f_cfg.pointSize())
 
     @flow
     def on_cfg_btn_clk_save(self):
-        self.cfg_fnt.save()
-        # todo save font for tables
+        self.cfg_fnts.save()
 
     # ---------
 
     @flow
     def on_xy_create_btn_clk(self):
         self.xy_create()
+
+    @flow
+    def on_xy_tbl_sel_chg(self):
+        indexes = self.xy_tbl_wid.selectionModel().selectedRows()
+        rows: List = [x.row() for x in sorted(indexes)]
+        xp(f'selected: {rows}')
+        if len(rows) == 0:
+            self.xy_btn_create.setDisabled(True)
+        else:
+            self.xy_btn_create.setDisabled(False)
 
     @flow
     def on_rad_create_btn_clk(self):
@@ -354,6 +401,16 @@ class FixItGui(QWidget):
         self.base.radius = value
 
     @flow
+    def on_rad_tbl_sel_chg(self):
+        indexes = self.rad_tbl_wid.selectionModel().selectedRows()
+        rows: List = [x.row() for x in sorted(indexes)]
+        xp(f'selected: {rows}')
+        if len(rows) == 0:
+            self.rad_btn_create.setDisabled(True)
+        else:
+            self.rad_btn_create.setDisabled(False)
+
+    @flow
     def on_hv_create_btn_clk(self):
         self.hv_create()
 
@@ -363,6 +420,16 @@ class FixItGui(QWidget):
         self.base.snap_angel = value
         self.hv_update_table()
         xp("Current Value :", value)
+
+    @flow
+    def on_hv_tbl_sel_chg(self):
+        indexes = self.hv_tbl_wid.selectionModel().selectedRows()
+        rows: List = [x.row() for x in sorted(indexes)]
+        xp(f'selected: {rows}')
+        if len(rows) == 0:
+            self.hv_btn_create.setDisabled(True)
+        else:
+            self.hv_btn_create.setDisabled(False)
 
     @flow
     def on_coin_create_btn_clk(self):
@@ -376,6 +443,16 @@ class FixItGui(QWidget):
         xp("Current Value :", value)
 
     @flow
+    def on_coin_tbl_sel_chg(self):
+        indexes = self.coin_tbl_wid.selectionModel().selectedRows()
+        rows: List = [x.row() for x in sorted(indexes)]
+        xp(f'selected: {rows}')
+        if len(rows) == 0:
+            self.coin_btn_create.setDisabled(True)
+        else:
+            self.coin_btn_create.setDisabled(False)
+
+    @flow
     def on_cons_delete_btn_clk(self):
         self.cons_delete()
 
@@ -383,6 +460,17 @@ class FixItGui(QWidget):
     def on_cons_type_cmb_chg(self, txt):
         ct: ConType = ConType(txt)
         self.cons_update_table(ct)
+
+    @flow
+    def on_cons_tbl_sel_chg(self):
+        indexes = self.cons_tbl_wid.selectionModel().selectedRows()
+        rows: List = [x.row() for x in sorted(indexes)]
+        xp(f'selected: {rows}')
+        if len(rows) == 0:
+            self.cons_btn_del.setDisabled(True)
+        else:
+            self.cons_btn_del.setDisabled(False)
+
 
     # -------------------------------------------------------------------------
 
@@ -412,7 +500,7 @@ class FixItGui(QWidget):
         self.xy_tbl_wid.setRowCount(0)
         __sorting_enabled = self.xy_tbl_wid.isSortingEnabled()
         self.xy_tbl_wid.setSortingEnabled(False)
-        edg_list: List[FixIt.XyEdge] = self.base.xy_edg_get_list()
+        edg_list: List[CoEd.XyEdge] = self.base.xy_edg_get_list()
         # xp('->', edg_list, **_rd_g)
         for idx, item in enumerate(edg_list):
             self.xy_tbl_wid.insertRow(0)
@@ -460,7 +548,7 @@ class FixItGui(QWidget):
         self.hv_tbl_wid.setRowCount(0)
         __sorting_enabled = self.hv_tbl_wid.isSortingEnabled()
         self.hv_tbl_wid.setSortingEnabled(False)
-        cir_list: List[FixIt.Circle] = self.base.circle_get_list()
+        cir_list: List[CoEd.Circle] = self.base.circle_get_list()
         xp('->', cir_list, **_rd_g)
         for item in cir_list:
             self.rad_tbl_wid.insertRow(0)
@@ -505,7 +593,7 @@ class FixItGui(QWidget):
         self.hv_tbl_wid.setRowCount(0)
         __sorting_enabled = self.hv_tbl_wid.isSortingEnabled()
         self.hv_tbl_wid.setSortingEnabled(False)
-        edge_list: List[FixIt.HvEdge] = self.base.hv_edges_get_list()
+        edge_list: List[CoEd.HvEdge] = self.base.hv_edges_get_list()
         for idx, item in enumerate(edge_list):
             if item.has_hv_cons:
                 continue
@@ -556,7 +644,7 @@ class FixItGui(QWidget):
         self.coin_tbl_wid.setRowCount(0)
         __sorting_enabled = self.coin_tbl_wid.isSortingEnabled()
         self.coin_tbl_wid.setSortingEnabled(False)
-        pt_list: List[FixIt.Point] = self.base.points_get_list()
+        pt_list: List[CoEd.Point] = self.base.points_get_list()
         # xp('pt list:', pt_list, **_cog)
         for i, pt in enumerate(pt_list):
             if len(pt.coin_pts) == 1:
@@ -565,7 +653,7 @@ class FixItGui(QWidget):
                 self.coin_tbl_wid.insertRow(0)
                 fmt = "{0: 6.2f} {1: 6.2f}".format(pt.geo_item_pt.x, pt.geo_item_pt.y)
                 self.coin_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
-                fm = ''.join("{0:2}.{1} ".format(x.geo_idx + 1, x.pt_type) for x in pt.coin_pts)
+                fm = ''.join("{0:2}.{1} ".format(x.geo_id + 1, x.type_id) for x in pt.coin_pts)
                 xp('fm:', fm, **_co_g)
                 self.coin_tbl_wid.setItem(0, 1, QTableWidgetItem(fm))
                 w_item = QTableWidgetItem()
@@ -592,7 +680,7 @@ class FixItGui(QWidget):
         self.cons_tbl_wid.setRowCount(0)
         __sorting_enabled = self.cons_tbl_wid.isSortingEnabled()
         self.cons_tbl_wid.setSortingEnabled(False)
-        co_list: List[FixIt.Constraint] = self.base.constraints_get_list()
+        co_list: List[CoEd.Constraint] = self.base.constraints_get_list()
         for item in co_list:
             if typ == ConType.ALL or typ == ConType(item.type_id):
                 self.cons_tbl_wid.insertRow(0)
@@ -661,6 +749,6 @@ if __name__ == '__main__':
 
     app = QApplication()
     my_style(app)
-    controller = FixItGui()
+    controller = CoEdGui()
     controller.show()
     sys.exit(app.exec_())

@@ -4,12 +4,16 @@ from typing import List
 
 from PySide2.QtCore import QObject, Signal
 
-from logger import _fl, xp
+from logger import _fl, xp, xps
 from tools import seq_gen
 
 
 class Event(QObject):
+    hv_edg_chg = Signal(str)
+    xy_edg_chg = Signal(str)
+    coin_pts_chg = Signal(str)
     cons_chg = Signal(str)
+
 
 # so = Event()
 # so.cons_chg.connect(say_some_words)
@@ -36,7 +40,9 @@ def dirty(_func=None, *, flag=None):
             else:
                 xp(f"{nam}: {arg} -> [ {res} ]", **_fl)
             return obj
+
         return wrapper_dirty
+
     if _func is None:
         return decorator_dirty
     else:
@@ -78,7 +84,6 @@ class FlagOps(Flag):
 
 
 class Dirty(Flag):
-
     NONE = 0
     HV_EDGES = auto()
     XY_EDGES = auto()
@@ -144,8 +149,8 @@ class Flags:
         self.__flags = ~self.__flags
 
 
+xps(__name__)
 if __name__ == '__main__':
-
     # for x, y in Dirty.__members__.items():
     #     print(x, y)
 
@@ -171,13 +176,3 @@ if __name__ == '__main__':
     # # print(next(g), f)
     # f.none_but(Dirty.HV_EDGES | Dirty.CONSTRAINTS)
     # # print(next(g), f)
-
-
-
-
-
-
-
-
-
-
