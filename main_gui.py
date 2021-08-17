@@ -545,9 +545,9 @@ class CoEdGui(QWidget):
 
     @flow
     def rad_update_table(self):
-        self.hv_tbl_wid.setRowCount(0)
-        __sorting_enabled = self.hv_tbl_wid.isSortingEnabled()
-        self.hv_tbl_wid.setSortingEnabled(False)
+        self.rad_tbl_wid.setRowCount(0)
+        __sorting_enabled = self.rad_tbl_wid.isSortingEnabled()
+        self.rad_tbl_wid.setSortingEnabled(False)
         cir_list: List[CoEd.Circle] = self.base.circle_get_list()
         xp('->', cir_list, **_rd_g)
         for item in cir_list:

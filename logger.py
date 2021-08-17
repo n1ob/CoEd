@@ -64,7 +64,7 @@ def fullname(o):
         return module + '.' + o.__class__.__name__
 
 '''
-
+# todo have a dbg switch ???
 
 class XpConf:
     topics: Set[str] = set()
@@ -215,7 +215,7 @@ GLB_LOG: bool = True
 # ! print the header once
 GLB_HEADER: bool = True
 
-_xpt('', 'flow', 'layout')
+_xpt('', 'flow', 'layout', 'circle')
 
 topics = {
     'co_g': XpConf('all.coincident.gui', 'cog').k(),

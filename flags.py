@@ -9,6 +9,7 @@ from tools import seq_gen
 
 
 class Event(QObject):
+    # todo code events
     hv_edg_chg = Signal(str)
     xy_edg_chg = Signal(str)
     coin_pts_chg = Signal(str)
@@ -151,6 +152,8 @@ class Flags:
 
 xps(__name__)
 if __name__ == '__main__':
+    # todo clean up test code
+
     # for x, y in Dirty.__members__.items():
     #     print(x, y)
 

@@ -21,7 +21,7 @@ def make_seg(v1, v2):
 def add_con(o: object):
     App.getDocument(DOC).getObject('Sketch').addConstraint(o)
 
-
+# todo test cases, test cases, test cases
 class MyTest(unittest.TestCase):
     def setUp(self) -> None:
         print("setUp")
