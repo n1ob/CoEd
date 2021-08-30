@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Set
 
 from PySide2.QtCore import Qt, QItemSelectionModel, QModelIndex, Slot
 from PySide2.QtGui import QFont
@@ -6,11 +6,11 @@ from PySide2.QtWidgets import QComboBox, QWidget, QVBoxLayout, QPlainTextEdit, Q
     QApplication, QHBoxLayout, QPushButton, QTabWidget, QLabel, QTableWidget, QTableWidgetItem, QSpinBox, \
     QAbstractItemView, QHeaderView, QGroupBox, QDoubleSpinBox, QCheckBox, QBoxLayout
 
-from config import CfgFonts
-from main_impl import CoEd
-from tools import ConType
-from style import XMLHighlighter, my_style
-from logger import xp, _co_g, _hv_g, _rd_g, flow, _ly_g, xps
+from co_config import CfgFonts
+from co_impl import CoEd
+from co_cmn import ConType
+from co_style import XMLHighlighter, my_style
+from co_logger import xp, _co_g, _hv_g, _rd_g, flow, _ly_g, xps, _cs_g
 
 _QL = QBoxLayout
 
@@ -44,6 +44,7 @@ class CoEdGui(QWidget):
         self.tab_lay_set()
 
         self.base.ev.cons_chg.connect(self.on_cons_chg)
+        self.base.ev.coin_pts_chg.connect(self.on_coin_chg)
         self.tabs.currentChanged.connect(self.on_cur_tab_chg)
 
         # -----------------------------------------------------
@@ -227,7 +228,7 @@ class CoEdGui(QWidget):
         self.cons_cmb_box = self.cons_prep_combo()
         self.cons_cmb_box.currentTextChanged.connect(self.on_cons_type_cmb_chg)
         self.cons_btn_del.clicked.connect(self.on_cons_delete_btn_clk)
-        self.cons_btn_del.setText(u"Create")
+        self.cons_btn_del.setText(u"Delete")
         self.cons_btn_del.setDisabled(True)
         # noinspection PyArgumentList
         li = [QVBoxLayout(), self.cons_grp_box,
@@ -280,7 +281,14 @@ class CoEdGui(QWidget):
     @flow
     @Slot(str)
     def on_cons_chg(self, words):
-        xp('Constraints changed', words, **_co_g)
+        xp('Constraints changed', words, **_cs_g)
+        co_list: List[CoEd.Constraint] = self.base.constraints_get_list()
+        self.cons_update_combo(co_list)
+
+    @flow
+    @Slot(str)
+    def on_coin_chg(self, words):
+        xp('Coin changed', words, **_co_g)
 
     @flow
     def on_cur_tab_chg(self, index: int):
@@ -459,19 +467,18 @@ class CoEdGui(QWidget):
     @flow
     def on_cons_type_cmb_chg(self, txt):
         ct: ConType = ConType(txt)
+        import cProfile, pstats
+        profiler = cProfile.Profile()
+        profiler.enable()
         self.cons_update_table(ct)
+        profiler.disable()
+        stats = pstats.Stats(profiler).sort_stats('cumtime')
+        stats.print_stats()
+
 
     @flow
     def on_cons_tbl_sel_chg(self):
-        indexes = self.cons_tbl_wid.selectionModel().selectedRows()
-        rows: List = [x.row() for x in sorted(indexes)]
-        xp(f'selected: {rows}')
-        if len(rows) == 0:
-            self.cons_btn_del.setDisabled(True)
-        else:
-            self.cons_btn_del.setDisabled(False)
-
-
+        self.cons_select()
     # -------------------------------------------------------------------------
 
     @flow
@@ -540,7 +547,7 @@ class CoEdGui(QWidget):
         create_list: List[int] = [x.data() for x in rows]
         for idx in rows:
             xp(idx.row(), ':', idx.data(), **_rd_g)
-        self.base.diameter_create(create_list, rad)
+        self.base.rad_dia_create(create_list, rad)
         self.rad_update_table()
 
     @flow
@@ -641,6 +648,7 @@ class CoEdGui(QWidget):
 
     @flow
     def coin_update_table(self):
+        # todo find transitive coins
         self.coin_tbl_wid.setRowCount(0)
         __sorting_enabled = self.coin_tbl_wid.isSortingEnabled()
         self.coin_tbl_wid.setSortingEnabled(False)
@@ -668,10 +676,10 @@ class CoEdGui(QWidget):
     def cons_delete(self):
         mod: QItemSelectionModel = self.cons_tbl_wid.selectionModel()
         rows: List[QModelIndex] = mod.selectedRows(2)
-        del_list: List[int] = []
+        del_list: List[int] = list()
         for idx in rows:
-            xp(str(idx.row()) + ' : ' + str(idx.data()))
-            del_list.append(idx.data())
+            xp(str(idx.row()), ':', str(idx.data()), idx.data().co_idx)
+            del_list.append(idx.data().co_idx)
         self.base.constraints_delete(del_list)
         self.cons_update_table()
 
@@ -687,24 +695,50 @@ class CoEdGui(QWidget):
                 self.cons_tbl_wid.setItem(0, 0, QTableWidgetItem(item.type_id))
                 self.cons_tbl_wid.setItem(0, 1, QTableWidgetItem(str(item)))
                 w_item = QTableWidgetItem()
-                w_item.setData(Qt.DisplayRole, item.co_idx)
+                w_item.setData(Qt.DisplayRole, item)
+                # w_item.setData(Qt.DisplayRole, item.co_idx)
                 self.cons_tbl_wid.setItem(0, 2, w_item)
         self.cons_tbl_wid.setSortingEnabled(__sorting_enabled)
+        self.base.analyse_sketch()
+
+    def cons_select(self):
+        indexes: List[QModelIndex] = self.cons_tbl_wid.selectionModel().selectedRows(2)
+        rows: List = [x.row() for x in sorted(indexes)]
+        xp(f'selected: {rows}')
+        if len(rows) == 0:
+            self.cons_btn_del.setDisabled(True)
+        else:
+            self.cons_btn_del.setDisabled(False)
+        for item in indexes:
+            co: CoEd.Constraint = item.data()
+            xp(str(item.row()), ':', str(co), ':', co.co_idx)
+            # ed_info = Gui.ActiveDocument.InEditInfo
+            # doc_name = App.activeDocument().Name
+            # sk_name = ed_info[0].Name
+            # Gui.Selection.addSelection(doc_name, sk_name, 'Edge1')
+
+
+    @flow
+    def cons_update_combo(self, co_list: List[CoEd.Constraint]) -> None:
+        co_set: Set[str] = set()
+        co_set.add(ConType.ALL.value)
+        for item in co_list:
+            ct = ConType(item.type_id)
+            co_set.add(ct.value)
+        li = list(co_set)
+        li.sort()
+        xp('cmb text items', li)
+        self.cons_cmb_box.blockSignals(True)
+        self.cons_cmb_box.clear()
+        self.cons_cmb_box.addItems(li)
+        self.cons_cmb_box.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.cons_cmb_box.blockSignals(False)
 
     @staticmethod
     @flow
     def cons_prep_combo() -> QComboBox:
         combo_box = QComboBox(None)
         combo_box.addItem(ConType.ALL.value)
-        li: List[str] = []
-        for ct in ConType:
-            if ct == ConType.NONE or ct == ConType.ALL:
-                continue
-            else:
-                li.append(ct.value)
-        li.sort()
-        for it in li:
-            combo_box.addItem(it)
         return combo_box
 
     @flow
@@ -742,6 +776,7 @@ class CoEdGui(QWidget):
                     "}"
         tbl.setStyleSheet(tbl_style)
         tbl.setFont(self.tbl_font)
+
 
 xps(__name__)
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ from typing import NamedTuple, Dict, Set
 from PySide2.QtCore import QByteArray, QDataStream, QIODevice
 from PySide2.QtGui import QFont, QColor
 
-from logger import xp, xps, flow
+from co_logger import xp, xps, flow
 
 
 class ClsInfo(NamedTuple):

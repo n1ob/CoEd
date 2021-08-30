@@ -4,8 +4,8 @@ from typing import List
 
 from PySide2.QtCore import QObject, Signal
 
-from logger import _fl, xp, xps
-from tools import seq_gen
+from co_logger import _fl, xp, xps
+from co_cmn import seq_gen
 
 
 class Event(QObject):

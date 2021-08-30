@@ -1,8 +1,9 @@
 import functools
 import pathlib
 import sys
+import traceback
 from datetime import datetime
-from typing import Set, List
+from typing import Set, List, AnyStr
 
 '''
 >>> import dis
@@ -94,6 +95,49 @@ class XpConf:
         return d
 
 
+class XpWriter:
+
+    def write(self, s: AnyStr) -> int:
+        xp(s)
+        return 0
+
+
+def stack_tracer():
+    xps("stack tracer")
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+    # xps("print_tb:")
+    # traceback.print_tb(exc_traceback, limit=10, file=xpw)
+    # xps("print_exception:")
+    # # exc_type below is ignored on 3.5 and later
+    # traceback.print_exception(exc_type, exc_value, exc_traceback, limit=20, file=xpw)
+    # xps("print_exc:")
+    # traceback.print_exc(limit=20, file=xpw)
+    xps("format_exc:")
+    formatted_lines = traceback.format_exc().splitlines()
+    for line in formatted_lines:
+        xp(line)
+    # xps("format_exception:")
+    # # exc_type below is ignored on 3.5 and later
+    # f_lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
+    # for line in f_lines:
+    #     xp(line)
+    xps("extract_tb:")
+    f_lines: traceback.StackSummary[traceback.FrameSummary] = traceback.extract_tb(exc_traceback)
+    for li in f_lines:
+        xp(li)
+        xp(li.line)
+    # xps("format_tb:")
+    # f_lines = traceback.format_tb(exc_traceback)
+    # for line in f_lines:
+    #     xp(line)
+    # xps("tb_lineno:")
+    # xp(exc_traceback.tb_lineno)
+    xps("eof")
+
+
+file = open('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log', 'a', 1)
+
+
 def xp(*args, **kwargs) -> None:
     global GLB_HEADER
     global GLB_IND
@@ -133,9 +177,9 @@ def xp(*args, **kwargs) -> None:
         if GLB_LOG:
             # '../../AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/'
             # C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log
-            with open('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log', 'a') as file:
-                file.write(' '.join(f'{x}' for x in args))
-                file.write('\n')
+            # with open('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log', 'a', 1) as file:
+            file.write(' '.join(f'{x}' for x in args))
+            file.write('\n')
 
 
 def xps(*args: object, **kwargs: object) -> None:
@@ -161,13 +205,23 @@ def _xpt(*args):
     [XpConf.topics.add(x) for x in args]
 
 
+# import cProfile, pstats
+# profiler = cProfile.Profile()
+# profiler.enable()
+# main()
+# profiler.disable()
+# stats = pstats.Stats(profiler).sort_stats('ncalls')
+# stats.print_stats()
+
+
 def flow(_func=None, *, off=False, short=False):
     def decorator_flow(func):
         @functools.wraps(func)
         def wrapper_flow(*args, **kwargs):
             global GLB_IND
+            global GLB_LOG
             _flow['flow'] = -1
-            if off:
+            if off or not GLB_LOG:
                 obj = func(*args, **kwargs)
             elif short or GLB_SHORT:
                 GLB_IND += 2
@@ -215,7 +269,8 @@ GLB_LOG: bool = True
 # ! print the header once
 GLB_HEADER: bool = True
 
-_xpt('', 'flow', 'layout', 'circle')
+# '': use without kwargs
+_xpt('', 'flow')
 
 topics = {
     'co_g': XpConf('all.coincident.gui', 'cog').k(),
@@ -237,7 +292,10 @@ topics = {
     'co_bld': XpConf('all.co_build', 'cb').k(),
     'cir': XpConf('all.circle', 'cr').k(),
     'geo': XpConf('all.geo_list', 'ge').k(),
-    'flo': XpConf('all.flow').k()
+    'flo': XpConf('all.flow').k(),
+    'ob_s': XpConf('all.observer.observer_sel').k(),
+    'ob_g': XpConf('all.observer.observer_gui').k(),
+    'ob_a': XpConf('all.observer.observer_app').k()
 }
 
 _co_g = topics['co_g']
@@ -261,6 +319,9 @@ _co_build = topics['co_bld']
 _cir = topics['cir']
 _geo = topics['geo']
 _flow = topics['flo']
+_ob_s = topics['ob_s']
+_ob_g = topics['ob_g']
+_ob_a = topics['ob_a']
 
 xps(__name__)
 if __name__ == '__main__':

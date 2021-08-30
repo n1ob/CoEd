@@ -1,10 +1,11 @@
 from enum import Enum
-from typing import NamedTuple
+from typing import NamedTuple, Dict, Tuple
 import threading
 
 from FreeCADTypes import Sketcher
+import FreeCAD as App
 
-from logger import xps
+from co_logger import xps
 
 try:
     SketcherType = Sketcher.SketchObject
@@ -14,6 +15,10 @@ except AttributeError:
 
 pt_typ_str = {0: 'n', 1: 's', 2: 'e', 3: 'm'}
 pt_typ_int = {y: x for x, y in pt_typ_str.items()}
+
+
+def fmt_vec(vec: App.Vector) -> str:
+    return f'({vec.x:.2f}, {vec.y:.2f}, {vec.z:.2f})'
 
 
 # noinspection SpellCheckingInspection,PyPep8
@@ -44,6 +49,14 @@ class ConType(Enum):
 class GeoPt(NamedTuple):
     geo_id: int
     type_id: str
+
+    def __str__(self):
+        return "GeoId {}.{}".format(self.geo_id, self.type_id)
+
+
+class GeoPtn(NamedTuple):
+    geo_id: int
+    type_id: int
 
     def __str__(self):
         return "GeoId {}.{}".format(self.geo_id, self.type_id)
@@ -101,8 +114,5 @@ if __name__ == '__main__':
 
     print(s1)
     print(s2)
-
-
-
 
 
