@@ -4,20 +4,15 @@
 """
 import os
 import sys
-import traceback
 
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide2 import QtCore
-from PySide2.QtCore import QFile
 from PySide2.QtWidgets import QApplication, QWidget, QMessageBox
 
-from co_config import Cfg
 from co_logger import xps, xp, XpWriter, stack_tracer
 from co_gui import CoEdGui
 from co_impl import CoEd
-from co_style import my_style, set_style, set_palette
-from co_cmn import SketcherType
 
 try:
     from Sketcher import ActiveSketch  # hack def in Sketcher.pyi, ActiveSketch is actually in the current local scope

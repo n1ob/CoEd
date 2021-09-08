@@ -1,19 +1,19 @@
-import math
-import time
 from enum import Flag, auto
 from math import *
 from typing import List, NamedTuple, Set
+from xml.dom.minidom import Element, Document
 
 import Part
 import Sketcher
 from FreeCAD import Base
-import FreeCADGui as Gui
 import FreeCAD as App
+from PySide2.QtCore import Slot
 
-from co_flag import Event, Dirty, Flags
-from co_logger import xp, _co, _prn_edge, _co_co, _co_build, _hv, _xy, _cir, _geo, flow, _cs, xps
+from co_flag import DataChgEvent, Dirty, Flags, Cs
+from co_logger import xp, _co, _prn_edge, _co_co, _co_build, _hv, _xy, _cir, _geo, flow, _cs, xps, _ob_s
 from co_lookup import Lookup
-from co_cmn import pt_typ_str, pt_typ_int, ConType, GeoPt, ConsCoin, SketcherType, GeoPtn, fmt_vec
+from co_cmn import pt_typ_str, pt_typ_int, ConType, GeoPt, ConsCoin, SketchType, GeoPtn, fmt_vec, ConsTrans
+from co_observer import EventProvider
 
 
 class CoEd:
@@ -28,6 +28,9 @@ class CoEd:
             s = "GeoId {}, Center ({}, {}), xu {}, rad {}"
             return s.format(self.geo_id, self.center_x, self.center_y, self.angle_xu, self.radius)
 
+        def __repr__(self):
+            return self.__str__()
+
     class Point:
         def __init__(self, geo_item_pt: Base.Vector, geo_list_idx: int, pt_type: str):
             self.geo_item_pt: Base.Vector = geo_item_pt
@@ -38,6 +41,9 @@ class CoEd:
             s = "GeoId {}.{}, Start {:.2f}, End {:.2f}, CPts {}"
             return s.format(self.coin_pts[0].geo_id, self.coin_pts[0].type_id, self.geo_item_pt.x,
                             self.geo_item_pt.y, self.coin_pts)
+
+        def __repr__(self):
+            return self.__str__()
 
         def extend(self, geo_list_idx: int, pt_type: str):
             item = GeoPt(geo_list_idx, pt_type)
@@ -58,6 +64,9 @@ class CoEd:
             return s.format(self.geo_idx, self.pt_start.x, self.pt_start.y, self.pt_end.x, self.pt_end.y,
                             self.x_angel, self.y_angel, self.has_hv_cons)
 
+        def __repr__(self):
+            return self.__str__()
+
     class XyEdge:
         def __init__(self, geo_id: int, start: Base.Vector, end: Base.Vector, has_x: bool = False, has_y: bool = False):
             self.geo_id: int = geo_id
@@ -70,10 +79,14 @@ class CoEd:
             s = "GeoId {}, Start ({:.2f}, {:.2f}), End ({:.2f}, {:.2f}), csX {}, csY {}"
             return s.format(self.geo_id, self.start.x, self.start.y, self.end.x, self.end.y, self.has_x, self.has_y)
 
+        def __repr__(self):
+            return self.__str__()
+
     class Constraint:
         def __init__(self, co_idx: int, type_id: str, **kwargs):
             self.co_idx: int = co_idx
             self.type_id: str = type_id
+            self.sub_type: Cs = Cs(0)
             self.first: int = kwargs.get('FIRST', -2000)
             self.first_pos: str = kwargs.get('FIRST_POS', 0)
             self.second: int = kwargs.get('SECOND', -2000)
@@ -84,28 +97,24 @@ class CoEd:
             self.fmt = kwargs.get('FMT', "{0} : {1} : {2} : {3} : {4} : {5} : {6} : {7}")
 
         def __str__(self):
-            return self.fmt.format(self.first + 1, self.first_pos,  # (0),(1)
-                                   self.second + 1, self.second_pos,  # (2),(3)
-                                   self.third + 1, self.third_pos,  # (4),(5)
+            return self.fmt.format(self.first, self.first_pos,  # (0),(1)
+                                   self.second, self.second_pos,  # (2),(3)
+                                   self.third, self.third_pos,  # (4),(5)
                                    self.value, self.co_idx)  # (6),(7)
+
+        def __repr__(self):
+            return self.__str__()
 
     # x_axis: Base.Vector = Base.Vector(1, 0, 0)
     # y_axis: Base.Vector = Base.Vector(0, 1, 0)
 
-    class Dirty(Flag):
-        hv_edges: auto()
-        xy_edges: auto()
-        coin_points: auto()
-        constraints: auto()
-        rad_circle: auto()
-
     @flow
-    def __init__(self, sk: SketcherType, snap_dist: float = 0, snap_angel: float = 0, parent=None):
+    def __init__(self, sk: SketchType, snap_dist: float = 0, snap_angel: float = 0, parent=None):
         super().__init__()
         self.__init = False
         self.__flags: Flags = Flags(Dirty)
         self.__flags.all()
-        self.sketch: SketcherType = sk
+        self.sketch: SketchType = sk
         self.snap_dist: float = snap_dist
         self.snap_angel: float = snap_angel
         self.radius: float = 5
@@ -114,7 +123,10 @@ class CoEd:
         self.__coin_points: List[CoEd.Point] = list()
         self.__constraints: List[CoEd.Constraint] = list()
         self.__dbg_co_pts_list: List[str] = list()
-        self.ev = Event()
+        self.ev = DataChgEvent()
+        self.evo = EventProvider.ev
+        self.evo.obj_recomputed.connect(self.on_obj_recomputed)
+        self.evo.open_transact.connect(self.on_open_transact)
         self.__init = True
 
     @property
@@ -145,12 +157,12 @@ class CoEd:
         self.__flags.set(Dirty.HV_EDGES)
 
     @property
-    def sketch(self) -> SketcherType:
+    def sketch(self) -> SketchType:
         return self.__sketch
 
     @sketch.setter
-    def sketch(self, value: SketcherType):
-        self.__sketch: SketcherType = value
+    def sketch(self, value: SketchType):
+        self.__sketch: SketchType = value
         self.__flags.all()
 
     @flow
@@ -175,6 +187,21 @@ class CoEd:
             self.hv_detect_missing()
         return self.__hv_edges
 
+    @flow
+    @Slot(object)
+    def on_obj_recomputed(self, obj):
+        xp(f'on_obj_recomputed obj:', str(obj), **_ob_s)
+        self.__flags.all()
+
+    @flow
+    @Slot(object, str)
+    def on_open_transact(self, doc, name):
+        xp(f'on_open_transact doc: {doc} name: {name}', **_ob_s)
+        if 'coed' in name:
+            xp('ignore own')
+        else:
+            self.__flags.all()
+
     # -------------
     # diameters
 
@@ -188,17 +215,30 @@ class CoEd:
         return c_list
 
     @flow
-    def rad_dia_create(self, geo_id_list: List[int], radius: float):
-        if len(geo_id_list):
+    def rad_dia_create(self, cir_list: List[Circle], radius: float):
+        doc: App.Document = App.ActiveDocument
+        if len(cir_list):
             geo_list: list = self.sketch.Geometry
-            for idx in geo_id_list:
+            for cir in cir_list:
+                cir: CoEd.Circle
                 if radius is not None:
-                    self.sketch.addConstraint(Sketcher.Constraint('Diameter', idx, radius * 2))
+                    doc.openTransaction('coed: Diameter constraint')
+                    self.sketch.addConstraint(Sketcher.Constraint('Diameter', cir.geo_id, radius * 2))
+                    doc.commitTransaction()
                 else:
-                    cir: Part.Circle = geo_list[idx]
-                    self.sketch.addConstraint(Sketcher.Constraint('Diameter', idx, cir.Radius * 2))
+                    p_cir: Part.Circle = geo_list[cir.geo_id]
+                    doc.openTransaction('coed: Diameter constraint')
+                    self.sketch.addConstraint(Sketcher.Constraint('Diameter', cir.geo_id, p_cir.Radius * 2))
+                    doc.commitTransaction()
             self.__flags.set(Dirty.CONSTRAINTS)
-            self.sketch.Document.recompute()
+            sk: Sketcher.SketchObject = self.sketch
+            sk.addProperty('App::PropertyString', 'coed')
+            sk.coed = 'rad_recompute'
+            doc.openTransaction('coed: obj recompute')
+            sk.recompute()
+            # self.sketch.Document.recompute()
+            doc.commitTransaction()
+            self.ev.rad_chg.emit('rad create finish')
 
     # -------------
     # X / Y
@@ -235,18 +275,53 @@ class CoEd:
         [xp(xy_edge, **_xy) for xy_edge in self.__xy_edges]
         self.__flags.reset(Dirty.XY_EDGES)
 
+    '''
+xy        | GeoId 2, Start (-8.00, -6.00), End (7.00, -9.00), csX False, csY False
+    >>> # Gui.Selection.addSelection('Test','Sketch','Vertex5',-8,-6,0.012,False)
+    >>> # Gui.Selection.addSelection('Test','Sketch','Vertex6',7,-9,0.012,False)
+    >>> ### Begin command Sketcher_ConstrainLock
+    >>> App.getDocument('Test').getObject('Sketch').addConstraint(Sketcher.Constraint('DistanceX',2,1,2,2,15.000000)) 
+    >>> App.getDocument('Test').getObject('Sketch').addConstraint(Sketcher.Constraint('DistanceY',2,1,2,2,-3.000000)) 
+    >>> ### End command Sketcher_ConstrainLock
+    
+    7 - (-8) 15
+    -9 - (-6) -3
+    '''
+
     @flow
-    def xy_dist_create(self, geo_id_list: List[int]):
-        # todo missing impl, on edges not on points
-        if len(geo_id_list):
-            obj = self.points_get_list()
-            for pt in obj:
-                self.sketch.addConstraint(Sketcher.Constraint(
-                    'DistanceX', pt.coin_pts[0].geo_id, pt_typ_int[pt.coin_pts[0].type_id], pt.geo_item_pt.x))
-                self.sketch.addConstraint(Sketcher.Constraint(
-                    'DistanceY', pt.coin_pts[0].geo_id, pt_typ_int[pt.coin_pts[0].type_id], pt.geo_item_pt.y))
+    def xy_dist_create(self, geo_id_list: List[int], x: bool, y: bool):
+        doc: App.Document = App.ActiveDocument
+        xp('geo_list', geo_id_list, **_xy)
+        for idx in geo_id_list:
+            geo = self.sketch.Geometry[idx]
+            if geo.TypeId == 'Part::GeomLineSegment':
+                seg: Part.LineSegment = geo
+                if x:
+                    x1 = App.Vector(seg.StartPoint).x
+                    x2 = App.Vector(seg.EndPoint).x
+                    doc.openTransaction('coed: DistanceX constraint')
+                    self.sketch.addConstraint(Sketcher.Constraint('DistanceX', idx, 1, idx, 2, (x2-x1)))
+                    doc.commitTransaction()
+                    xp(f'DistanceX, geo_start ({idx}.1) geo_end ({idx}.2), {(x2-x1)}', **_xy)
+                if y:
+                    y1 = App.Vector(seg.StartPoint).y
+                    y2 = App.Vector(seg.EndPoint).y
+                    doc.openTransaction('coed: DistanceY constraint')
+                    self.sketch.addConstraint(Sketcher.Constraint('DistanceY', idx, 1, idx, 2, (y2-y1)))
+                    doc.commitTransaction()
+                    xp(f'DistanceY, geo_start ({idx}.1) geo_end ({idx}.2), {(y2-y1)}', **_xy)
+
+        if len(geo_id_list) > 0:
             self.__flags.set(Dirty.CONSTRAINTS)
-            self.sketch.Document.recompute()
+            self.__flags.set(Dirty.XY_EDGES)
+            sk: Sketcher.SketchObject = self.sketch
+            sk.addProperty('App::PropertyString', 'coed')
+            sk.coed = 'xy_recompute'
+            doc.openTransaction('coed: obj recompute')
+            sk.recompute()
+            # self.sketch.Document.recompute()
+            doc.commitTransaction()
+            self.ev.xy_edg_chg.emit('xy create finish')
 
     # ---------------------
     # Vertical / Horizontal
@@ -293,22 +368,35 @@ class CoEd:
                 if (a < self.snap_angel) or ((90 - a) < self.snap_angel):
                     self.__hv_edges.append(CoEd.HvEdge(idx, seg, 90 - a, a, (idx in existing)))
         self.__flags.reset(Dirty.HV_EDGES)
-        self.print_edge_angel_list()
+        # self.print_edge_angel_list()
 
     @flow
-    def hv_create(self, edge_id_list: List[int]):
-        for idx in edge_id_list:
-            edge: CoEd.HvEdge = self.__hv_edges[idx]
+    def hv_create(self, edge_id_list: List[HvEdge]):
+        doc: App.Document = App.ActiveDocument
+        # edges: List[CoEd.HvEdge] = self.hv_edges_get_list()
+        for edge in edge_id_list:
+            # edge: CoEd.HvEdge = edges[idx]
             if edge.x_angel <= self.snap_angel:
                 con = Sketcher.Constraint('Horizontal', edge.geo_idx)
+                doc.openTransaction('coed: Horizontal constraint')
                 self.sketch.addConstraint(con)
+                doc.commitTransaction()
                 continue
             if edge.y_angel <= self.snap_angel:
                 con = Sketcher.Constraint('Vertical', edge.geo_idx)
+                doc.openTransaction('coed: Vertical constraint')
                 self.sketch.addConstraint(con)
+                doc.commitTransaction()
         self.__flags.set(Dirty.HV_EDGES)
         self.__flags.set(Dirty.CONSTRAINTS)
-        self.sketch.Document.recompute()
+        sk: Sketcher.SketchObject = self.sketch
+        sk.addProperty('App::PropertyString', 'coed')
+        sk.coed = 'hv_recompute'
+        doc.openTransaction('coed: obj recompute')
+        sk.recompute()
+        # self.sketch.Document.recompute()
+        doc.commitTransaction()
+        self.ev.hv_edg_chg.emit('hv create finish')
 
     # -----------------
     # Coincident
@@ -364,12 +452,13 @@ class CoEd:
         return col
 
     @flow
-    def coin_create(self, pt_idx_list: List[int]):
+    def coin_create(self, pt_idx_list: List[Point]):
+        doc: App.Document = App.ActiveDocument
         xp('pt_idx_list', pt_idx_list, **_co)
-        if pt_idx_list is None:
+        if len(pt_idx_list) == 0:
             return
-        for idx in pt_idx_list:
-            pt: CoEd.Point = self.__coin_points[idx]
+        for pt in pt_idx_list:
+            # pt: CoEd.Point = self.__coin_points[idx]
             xp('pt', pt.coin_pts, **_co)
             if len(pt.coin_pts) == 1:
                 continue
@@ -382,10 +471,18 @@ class CoEd:
                     xp(fmt, **_co)
                     con = Sketcher.Constraint('Coincident', p1.geo_id, pt_typ_int[p1.type_id], p2.geo_id,
                                               pt_typ_int[p2.type_id])
+                    doc.openTransaction('coed: Coincident constraint')
                     self.sketch.addConstraint(con)
+                    doc.commitTransaction()
                 self.__flags.all()
+                sk: Sketcher.SketchObject = self.sketch
+                sk.addProperty('App::PropertyString', 'coed')
+                sk.coed = 'coin_recompute'
+                doc.openTransaction('coed: obj recompute')
+                sk.recompute()
+                # self.sketch.Document.recompute()
+                doc.commitTransaction()
                 self.ev.coin_pts_chg.emit('coin_create finish')
-                self.sketch.Document.recompute()
 
     # ---------------
     # Constraint
@@ -393,69 +490,51 @@ class CoEd:
     def constraints_detect(self):
         self.__constraints.clear()
         # noinspection PyUnresolvedReferences
-        co_list: list = self.sketch.Constraints
-        xp('co_lst', _cs, **_cs)
+        co_list: List[Sketcher.Constraint] = self.sketch.Constraints
         xp('co_lst', co_list, **_cs)
-        for i in range(len(co_list)):
-            item: Sketcher.Constraint = co_list[i]
+        for idx, item in enumerate(co_list):
             ct: ConType = ConType(item.Type)
             if ct == ConType.COINCIDENT:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2
                 if item.Third == -2000:
-                    kwargs = self.__get_kwargs(['f', 'fp', 's', 'sp'], item, "({0}.{1}) ({2}.{3})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'SECOND_POS': pt_typ_str[item.SecondPos],
-                    #     'FMT': "({0}.{1}) ({2}.{3})"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.S | Cs.SP
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2}.{3})")
                 else:
-                    xp('unexpected case')
+                    xp('unexpected case:', ct, **_cs)
                     raise ValueError(item)
 
-                con = self.Constraint(i, ct.value, **kwargs)
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
 
             elif ct == ConType.HORIZONTAL or ct == ConType.VERTICAL:
                 # ConstraintType, GeoIndex
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2
                 if item.Second == -2000:
-                    kwargs = self.__get_kwargs(['f'], item, "({0})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FMT': "({0})"
-                    # }
+                    cs: Cs = Cs.F
+                    kwargs = self.__get_kwargs(cs, item, "({0})")
                 elif item.Third == -2000:
-                    kwargs = self.__get_kwargs(['f', 'fp', 's', 'sp'], item, "({0}.{1}) ({2}.{3})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'SECOND_POS': pt_typ_str[item.SecondPos],
-                    #     'FMT': "({0}.{1}) ({2}.{3})"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.S | Cs.SP
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2}.{3})")
                 else:
-                    xp('unexpected case')
+                    xp('unexpected case:', ct, **_cs)
                     raise ValueError(item)
 
-                con = self.Constraint(i, ct.value, **kwargs)
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
 
             elif ct == ConType.PARALLEL or ct == ConType.EQUAL:
                 # ConstraintType, GeoIndex1, GeoIndex2
                 if item.Third == -2000:
-                    kwargs = self.__get_kwargs(['f', 's'], item, "({0}) ({2})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'SECOND': item.Second,
-                    #     'FMT': "({0}) ({2})"
-                    # }
+                    cs: Cs = Cs.F | Cs.S
+                    kwargs = self.__get_kwargs(cs, item, "({0}) ({2})")
                 else:
-                    xp('unexpected case')
+                    xp('unexpected case:', ct, **_cs)
                     raise ValueError(item)
 
-                con = self.Constraint(i, ct.value, **kwargs)
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
 
             elif ct == ConType.TANGENT or ct == ConType.PERPENDICULAR:
@@ -463,34 +542,20 @@ class CoEd:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2
                 if item.FirstPos == 0:  # e.g. edge on edge
-                    kwargs = self.__get_kwargs(['f', 's'], item, "({0}) ({2})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'SECOND': item.Second,
-                    #     'FMT': "({0}) ({2})"
-                    # }
+                    cs: Cs = Cs.F | Cs.S
+                    kwargs = self.__get_kwargs(cs, item, "({0}) ({2})")
                 elif item.SecondPos == 0:  # e.g. vertex on edge
-                    kwargs = self.__get_kwargs(['f', 'fp', 's'], item, "({0}.{1}) ({2})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'FMT': "({0}.{1}) ({2})"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.S
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2})")
                 elif item.Third == -2000:  # e.g. vertex on vertex
-                    kwargs = self.__get_kwargs(['f', 'fp', 's', 'sp'], item, "({0}.{1}) ({2}.{3})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'SECOND_POS': pt_typ_str[item.SecondPos],
-                    #     'FMT': "({0}.{1}) ({2}.{3})"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.S | Cs.SP
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2}.{3})")
                 else:
-                    xp('unexpected case')
+                    xp('unexpected case:', ct, **_cs)
                     raise ValueError(item)
 
-                con = self.Constraint(i, ct.value, **kwargs)
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
 
             elif ct == ConType.DISTANCE:
@@ -498,72 +563,38 @@ class CoEd:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, Value
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, Value
                 if item.FirstPos == 0:
-                    kwargs = self.__get_kwargs(['f', 'v'], item, "({0}) v: {6:.2f}")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'VALUE': item.Value,
-                    #     'FMT': "({0}) v: {6:.2f}"
-                    # }
+                    cs: Cs = Cs.F | Cs.V
+                    kwargs = self.__get_kwargs(cs, item, "({0}) v: {6:.2f}")
                 elif item.SecondPos == 0:
-                    kwargs = self.__get_kwargs(['f', 'fp', 's', 'v'], item, "({0}.{1}) ({2}) v: {6:.2f}")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'VALUE': item.Value,
-                    #     'FMT': "({0}.{1}) ({2})  v: {6:.2f}"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.S | Cs.V
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2}) v: {6:.2f}")
                 elif item.Third == -2000:
-                    kwargs = self.__get_kwargs(['f', 'fp', 's', 'sp', 'v'], item, "({0}.{1}) ({2}.{3}) v: {6:.2f}")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'SECOND_POS': pt_typ_str[item.SecondPos],
-                    #     'VALUE': item.Value,
-                    #     'FMT': "({0}.{1}) ({2}.{3}) v: {6:.2f}"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.S | Cs.SP | Cs.V
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2}.{3}) v: {6:.2f}")
                 else:
-                    xp('unexpected case')
+                    xp('unexpected case:', ct, **_cs)
                     raise ValueError(item)
 
-                con = self.Constraint(i, ct.value, **kwargs)
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
 
             elif ct == ConType.DISTANCEX or ct == ConType.DISTANCEY:
-                # ConstraintType, GeoIndex, Value
-                # ConstraintType, GeoIndex, PosIndex, Value
-                # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, Value
                 if item.FirstPos == 0:
-                    kwargs = self.__get_kwargs(['f', 'v'], item, "({0}) v: {6:.2f}")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'VALUE': item.Value,
-                    #     'FMT': "({0}) v: {6:.2f}"
-                    # }
+                    cs: Cs = Cs.F | Cs.V
+                    kwargs = self.__get_kwargs(cs, item, "({0}) v: {6:.2f}")
                 elif item.Second == -2000:
-                    kwargs = self.__get_kwargs(['f', 'fp', 'v'], item, "({0}.{1}) v: {6:.2f}")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'VALUE': item.Value,
-                    #     'FMT': "({0}.{1}) v: {6:.2f}"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.V
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) v: {6:.2f}")
                 elif item.Third == -2000:
-                    kwargs = self.__get_kwargs(['f', 'fp', 's', 'sp', 'v'], item, "({0}.{1}) ({2}.{3}) v: {6:.2f}")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'SECOND_POS': pt_typ_str[item.SecondPos],
-                    #     'VALUE': item.Value,
-                    #     'FMT': "({0}.{1}) ({2}.{3})  v: {6:.2f}"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.S | Cs.SP | Cs.V
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2}.{3}) v: {6:.2f}")
                 else:
-                    xp('unexpected case')
+                    xp('unexpected case:', ct, **_cs)
                     raise ValueError(item)
 
-                con = self.Constraint(i, ct.value, **kwargs)
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
 
             elif ct == ConType.ANGLE:
@@ -571,95 +602,59 @@ class CoEd:
                 # ConstraintType, GeoIndex1, GeoIndex2, Value
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, Value
                 if item.FirstPos == 0:
-                    kwargs = self.__get_kwargs(['f', 'v'], item, "({0}) v: {6:.2f}")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'VALUE': item.Value,
-                    #     'FMT': "({0}) v: {6:.2f}"
-                    # }
+                    cs: Cs = Cs.F | Cs.V
+                    kwargs = self.__get_kwargs(cs, item, "({0}) v: {6:.2f}")
                 elif item.SecondPos == 0:
-                    kwargs = self.__get_kwargs(['f', 's', 'v'], item, "({0}) ({2}) v: {6:.2f}")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'SECOND': item.Second,
-                    #     'VALUE': item.Value,
-                    #     'FMT': "({0}) ({2}) v: {6:.2f}"
-                    # }
+                    cs: Cs = Cs.F | Cs.S | Cs.V
+                    kwargs = self.__get_kwargs(cs, item, "({0}) ({2}) v: {6:.2f}")
                 elif item.Third == -2000:
-                    kwargs = self.__get_kwargs(['f', 'fp', 's', 'sp', 'v'], item, "({0}.{1}) ({2}.{3}) v: {6:.2f}")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'SECOND_POS': pt_typ_str[item.SecondPos],
-                    #     'VALUE': item.Value,
-                    #     'FMT': "({0}.{1}) ({2}.{3})  v: {6:.2f}"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.S | Cs.SP | Cs.V
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2}.{3}) v: {6:.2f}")
                 else:
-                    xp('unexpected case')
+                    xp('unexpected case:', ct, **_cs)
                     raise ValueError(item)
 
-                con = self.Constraint(i, ct.value, **kwargs)
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
 
             elif ct == ConType.RADIUS or ct == ConType.DIAMETER or ct == ConType.WEIGHT:
                 # ConstraintType, GeoIndex, Value
                 if item.FirstPos == 0:
-                    kwargs = self.__get_kwargs(['f', 'v'], item, "({0}) v: {6:.2f}")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'VALUE': item.Value,
-                    #     'FMT': "({0})  v: {6:.2f}"
-                    # }
+                    cs: Cs = Cs.F | Cs.V
+                    kwargs = self.__get_kwargs(cs, item, "({0}) v: {6:.2f}")
                 else:
-                    xp('unexpected case')
+                    xp('unexpected case:', ct, **_cs)
                     raise ValueError(item)
 
-                con = self.Constraint(i, ct.value, **kwargs)
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
 
             elif ct == ConType.POINTONOBJECT:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2
                 if item.SecondPos == 0:
-                    kwargs = self.__get_kwargs(['f', 'fp', 's'], item, "({0}.{1}) ({2})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'FMT': "({0}.{1}) ({2})"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.S
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2})")
                 else:
-                    xp('unexpected case')
+                    xp('unexpected case:', ct, **_cs)
                     raise ValueError(item)
 
-                con = self.Constraint(i, ct.value, **kwargs)
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
 
             elif ct == ConType.SYMMETRIC:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, GeoIndex3
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, GeoIndex3, PosIndex3
                 if item.ThirdPos == 0:
-                    kwargs = self.__get_kwargs(['f', 'fp', 's', 'sp', 't'], item, "({0}.{1}) ({2}.{3}) ({4})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'SECOND_POS': pt_typ_str[item.SecondPos],
-                    #     'THIRD': item.Third,
-                    #     'FMT': "({0}.{1}) ({2}.{3}) ({4})"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.S | Cs.SP | Cs.T
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2}.{3}) ({4})")
                 else:
-                    kwargs = self.__get_kwargs(['f', 'fp', 's', 'sp', 't', 'tp'], item, "({0}.{1}) ({2}.{3}) ({4}.{5})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'SECOND_POS': pt_typ_str[item.SecondPos],
-                    #     'THIRD': item.Third,
-                    #     'THIRD_POS': pt_typ_str[item.ThirdPos],
-                    #     'FMT': "({0}.{1}) ({2}.{3}) ({4}.{5})"
-                    # }
-                con = self.Constraint(i, ct.value, **kwargs)
+                    cs: Cs = Cs.F | Cs.FP | Cs.S | Cs.SP | Cs.T | Cs.ST
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2}.{3}) ({4}.{5})")
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
 
             elif ct == ConType.INTERNALALIGNMENT:
@@ -667,95 +662,93 @@ class CoEd:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2
                 if item.FirstPos == 0:
-                    kwargs = self.__get_kwargs(['f', 's'], item, "({0}) ({2})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'SECOND': item.Second,
-                    #     'FMT': "({0}) ({2})"
-                    # }
+                    cs: Cs = Cs.F | Cs.S
+                    kwargs = self.__get_kwargs(cs, item, "({0}) ({2})")
                 elif item.SecondPos == 0:
-                    kwargs = self.__get_kwargs(['f', 'fp', 's'], item, "({0}.{1}) ({2})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'FMT': "({0}.{1}) ({2})"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.S
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2})")
                 elif item.Third == -2000:
-                    kwargs = self.__get_kwargs(['f', 'fp', 's', 'sp'], item, "({0}.{1}) ({2}.{3})")
-                    # kwargs = {
-                    #     'FIRST': item.First,
-                    #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                    #     'SECOND': item.Second,
-                    #     'SECOND_POS': pt_typ_str[item.SecondPos],
-                    #     'FMT': "({0}.{1}) ({2}.{3})"
-                    # }
+                    cs: Cs = Cs.F | Cs.FP | Cs.S | Cs.SP
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2}.{3})")
                 else:
-                    xp('unexpected case')
+                    xp('unexpected case:', ct, **_cs)
                     raise ValueError(item)
 
-                con = self.Constraint(i, ct.value, **kwargs)
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
 
             elif ct == ConType.SNELLSLAW:
+                # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, GeoIndex3 ????
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, GeoIndex3, PosIndex3
-                kwargs = self.__get_kwargs(['f', 'fp', 's', 'sp', 't', 'tp'], item, "({0}.{1}) ({2}.{3}) ({4}.{5})")
-                # kwargs = {
-                #     'FIRST': item.First,
-                #     'FIRST_POS': pt_typ_str[item.FirstPos],
-                #     'SECOND': item.Second,
-                #     'SECOND_POS': pt_typ_str[item.SecondPos],
-                #     'THIRD': item.Third,
-                #     'THIRD_POS': pt_typ_str[item.ThirdPos],
-                #     'FMT': "({0}.{1}) ({2}.{3}) ({4}.{5})"
-                # }
-                con = self.Constraint(i, ct.value, **kwargs)
+                if item.ThirdPos == 0:
+                    cs: Cs = Cs.F | Cs.FP | Cs.S | Cs.SP | Cs.T
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2}.{3}) ({4})")
+                else:
+                    cs: Cs = Cs.F | Cs.FP | Cs.S | Cs.SP | Cs.T | Cs.TP
+                    kwargs = self.__get_kwargs(cs, item, "({0}.{1}) ({2}.{3}) ({4}.{5})")
+
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
 
             elif ct == ConType.BLOCK:
                 # ConstraintType, GeoIndex
-                kwargs = self.__get_kwargs(['f'], item, "({0})")
-                # kwargs = {
-                #     'FIRST': item.First,
-                #     'FMT': "({0})"
-                # }
-                con = self.Constraint(i, ct.value, **kwargs)
+                cs: Cs = Cs.F
+                kwargs = self.__get_kwargs(cs, item, "({0})")
+                con = self.Constraint(idx, ct.value, **kwargs)
+                con.sub_type = cs
                 self.__constraints.append(con)
         self.__flags.reset(Dirty.CONSTRAINTS)
         self.ev.cons_chg.emit('cons detect finish')
 
-
     @staticmethod
-    def __get_kwargs(cont: List, item: Sketcher.Constraint, fmt: str) -> dict:
+    def __get_kwargs(cont: Cs, item: Sketcher.Constraint, fmt: str) -> dict:
         d: dict = dict()
-        for x in cont:
-            if x == 'f':
-                d['FIRST'] = item.First
-            if x == 'fp':
-                d['FIRST_POS'] = pt_typ_str[item.FirstPos]
-            if x == 's':
-                d['SECOND'] = item.Second
-            if x == 'sp':
-                d['SECOND_POS'] = pt_typ_str[item.SecondPos]
-            if x == 't':
-                d['THIRD'] = item.Third
-            if x == 'tp':
-                d['THIRD_POS'] = pt_typ_str[item.ThirdPos]
-            if x == 'v':
-                d['VALUE'] = item.Value
+        if Cs.F in cont:
+            d['FIRST'] = item.First
+        if Cs.FP in cont:
+            d['FIRST_POS'] = pt_typ_str[item.FirstPos]
+        if Cs.S in cont:
+            d['SECOND'] = item.Second
+        if Cs.SP in cont:
+            d['SECOND_POS'] = pt_typ_str[item.SecondPos]
+        if Cs.T in cont:
+            d['THIRD'] = item.Third
+        if Cs.TP in cont:
+            d['THIRD_POS'] = pt_typ_str[item.ThirdPos]
+        if Cs.V in cont:
+            d['VALUE'] = item.Value
         d['FMT'] = fmt
         return d
 
     @flow
     def constraints_delete(self, idx_list: List[int]):
+        doc: App.Document = App.ActiveDocument
         if len(idx_list):
             del_list: [int] = idx_list
             del_list.sort(reverse=True)
             for i in del_list:
                 xp('del: ' + str(i), **_cs)
+                doc.openTransaction('coed: delete constraint')
                 self.sketch.delConstraint(i)
+                doc.commitTransaction()
             self.__flags.set(Dirty.CONSTRAINTS)
-            self.sketch.Document.recompute()
+            doc.openTransaction('coed: obj recompute')
+            sk: Sketcher.SketchObject = self.sketch
+            sk.addProperty('App::PropertyString', 'coed')
+            sk.coed = 'cons_recompute'
+            sk.recompute()
+            # self.sketch.Document.recompute()
+            doc.commitTransaction()
+            self.ev.cons_chg.emit('cons delete finish')
+
+    '''
+    | idx: 0 type_id: Part::GeomLineSegment start: (4.00, 8.00, 0.00) end: (20.00, 10.00, 0.00)
+    | idx: 1 type_id: Part::GeomPoint item: <Point (17.6509,4.76469,0) >
+    | idx: 2 type_id: Part::GeomArcOfCircle item: ArcOfCircle (Radius : 3, Position : (9, 14, 0), Direction : (0, 0, 1), Parameter : (1.5708, 3.14159))
+    | idx: 3 type_id: Part::GeomCircle center: (16.21, 20.24, 0.00) radius: 1.793571
+    '''
 
     # -------------
     # info & dbg
@@ -774,10 +767,230 @@ class CoEd:
             elif item.TypeId == 'Part::GeomPoint':
                 pt: Part.Point = item
                 s.append(pt.Content)
+            elif item.TypeId == 'Part::GeomArcOfCircle':
+                arc: Part.ArcOfCircle = item
+                s.append(f'{arc.Content}\n')
             else:
                 xp('geo_xml_get unexpected', item.TypeId)
                 s.append(str(item))
         return ''.join(s)
+
+    def sketch_info_xml_get(self) -> str:
+        from xml.dom import minidom
+        doc: Document = minidom.Document()
+
+        for obj in App.ActiveDocument.Objects:
+            root: Element = doc.createElement(obj.TypeId)
+            if obj.TypeId == 'Sketcher::SketchObject':
+                sk: Sketcher.Sketch = obj
+                root.setAttribute('FullName', sk.FullName)
+                doc.appendChild(root)
+
+                leaf_gwdp: Element = doc.createElement('GeometryWithDependentParameters')
+                text = doc.createTextNode(f'{obj.getGeometryWithDependentParameters()}')
+                leaf_gwdp.appendChild(text)
+                root.appendChild(leaf_gwdp)
+
+                leaf_op_vert: Element = doc.createElement('OpenVertices')
+                for idx, item in enumerate(sk.OpenVertices):
+                    leaf_item: Element = doc.createElement('item')
+                    leaf_item.setAttribute('idx', str(idx))
+                    text: Element = doc.createTextNode(f'Point {fmt_vec(App.Vector(item))}')
+                    leaf_item.appendChild(text)
+                    leaf_op_vert.appendChild(leaf_item)
+                root.appendChild(leaf_op_vert)
+
+                leaf_geo: Element = doc.createElement('Geometry')
+                leaf_line: Element = doc.createElement('Line')
+                leaf_circle: Element = doc.createElement('Circle')
+                leaf_arc: Element = doc.createElement('ArcOfCircle')
+                leaf_pt: Element = doc.createElement('Point')
+                leaf_other: Element = doc.createElement('Other')
+                for idx, item in enumerate(sk.Geometry):
+
+                    if item.TypeId == 'Part::GeomLineSegment':
+                        line: Part.LineSegment = item
+                        leaf_item: Element = doc.createElement('item')
+                        leaf_item.setAttribute('idx', str(idx))
+                        leaf_item.setAttribute('TypeId', item.TypeId)
+                        s: str = f'start {fmt_vec(App.Vector(line.StartPoint))} end {fmt_vec(App.Vector(line.EndPoint))}'
+                        text: Element = doc.createTextNode(s)
+                        leaf_item.appendChild(text)
+                        leaf_line.appendChild(leaf_item)
+                    elif item.TypeId == 'Part::GeomCircle':
+                        cir: Part.Circle = item
+                        leaf_item: Element = doc.createElement('item')
+                        leaf_item.setAttribute('idx', str(idx))
+                        leaf_item.setAttribute('TypeId', item.TypeId)
+                        s: str = f'Center: {fmt_vec(App.Vector(cir.Center))} Radius: {cir.Radius}'
+                        text: Element = doc.createTextNode(s)
+                        leaf_item.appendChild(text)
+                        leaf_circle.appendChild(leaf_item)
+                    elif item.TypeId == 'Part::GeomArcOfCircle':
+                        arc: Part.ArcOfCircle = item
+                        leaf_item: Element = doc.createElement('item')
+                        leaf_item.setAttribute('idx', str(idx))
+                        leaf_item.setAttribute('TypeId', item.TypeId)
+                        s: str = f'Arc: {arc}'
+                        text: Element = doc.createTextNode(s)
+                        leaf_item.appendChild(text)
+                        leaf_arc.appendChild(leaf_item)
+                    elif item.TypeId == 'Part::GeomPoint':
+                        pt: Part.Point = item
+                        leaf_item: Element = doc.createElement('item')
+                        leaf_item.setAttribute('idx', str(idx))
+                        leaf_item.setAttribute('TypeId', item.TypeId)
+                        s: str = f'Point: {fmt_vec(App.Vector(pt.X, pt.Y, pt.Z))}'
+                        text: Element = doc.createTextNode(s)
+                        leaf_item.appendChild(text)
+                        leaf_pt.appendChild(leaf_item)
+                    else:
+                        leaf_item: Element = doc.createElement('item')
+                        leaf_item.setAttribute('idx', str(idx))
+                        leaf_item.setAttribute('TypeId', item.TypeId)
+                        text: Element = doc.createTextNode(f'item {item}')
+                        leaf_item.appendChild(text)
+                        leaf_other.appendChild(leaf_item)
+
+                leaf_geo.appendChild(leaf_line)
+                leaf_geo.appendChild(leaf_circle)
+                leaf_geo.appendChild(leaf_arc)
+                leaf_geo.appendChild(leaf_pt)
+                leaf_geo.appendChild(leaf_other)
+                root.appendChild(leaf_geo)
+
+                leaf_geo_idx: Element = doc.createElement('getGeoVertexIndex')
+                idx = 0
+                while True:
+                    geo, pos = self.sketch.getGeoVertexIndex(idx)
+                    if (geo == -2000) and (pos == 0):
+                        break
+                    leaf_item: Element = doc.createElement('item')
+                    leaf_item.setAttribute('idx', str(idx))
+                    leaf_item.setAttribute('geo', f'({geo}.{pos})')
+                    leaf_geo_idx.appendChild(leaf_item)
+                    idx += 1
+                root.appendChild(leaf_geo_idx)
+
+                leaf_cons: Element = doc.createElement('constraints_get_list')
+                co_list = self.constraints_get_list()
+                lo = Lookup(sk)
+                for idx, item in enumerate(co_list):
+                    s1, s2 = lo.lookup(ConsTrans(item.co_idx, item.type_id, item.sub_type, item.fmt))
+                    leaf_item: Element = doc.createElement('item')
+                    leaf_item.setAttribute('idx', str(idx))
+                    leaf_item.setAttribute('type_id', item.type_id)
+                    leaf_item.setAttribute('sub_type', f'{item.sub_type}')
+                    leaf_item.setAttribute('item', f'{item}')
+                    text: Element = doc.createTextNode(f'{s2} {s1}')
+                    leaf_item.appendChild(text)
+                    leaf_cons.appendChild(leaf_item)
+                root.appendChild(leaf_cons)
+
+                leaf_shape_edge: Element = doc.createElement('Shape.Edges')
+                for idx, edg in enumerate(obj.Shape.Edges):
+                    leaf_item1: Element = doc.createElement('item')
+                    leaf_item1.setAttribute('idx', str(idx))
+                    leaf_item1.setAttribute('ShapeType', edg.ShapeType)
+                    if edg.ShapeType == 'Edge':
+                        if hasattr(edg, 'Curve'):
+                            if isinstance(edg.Curve, Part.Circle):
+                                leaf_item2: Element = doc.createElement('Part.Circle')
+                                leaf_item2.setAttribute('TypeId', edg.Curve.TypeId)
+                                s = f"Curve: Part.Circle Center: {fmt_vec(App.Vector(edg.Curve.Center))} Radius: {edg.Curve.Radius} Tag: {edg.Curve.Tag}"
+                            elif isinstance(edg.Curve, Part.Line):
+                                leaf_item2: Element = doc.createElement('Part.Line')
+                                leaf_item2.setAttribute('TypeId', edg.Curve.TypeId)
+                                s = f"Curve: Part.Line Location: {fmt_vec(App.Vector(edg.Curve.Location))} Tag: {edg.Curve.Tag}"
+                            else:
+                                leaf_item2: Element = doc.createElement('unexpected')
+                                leaf_item2.setAttribute('TypeId', edg.Curve.TypeId)
+                                s = f"Curve: unexpected type: {type(edg)}"
+                            text: Element = doc.createTextNode(f'{s}')
+                            leaf_item2.appendChild(text)
+                            leaf_item1.appendChild(leaf_item2)
+
+                        for idy, vert in enumerate(edg.SubShapes):
+                            leaf_item2: Element = doc.createElement('shape')
+                            leaf_item2.setAttribute('idx', str(idy))
+                            leaf_item2.setAttribute('ShapeType', vert.ShapeType)
+                            s = f"Point: {fmt_vec(vert.Point)}"
+                            text: Element = doc.createTextNode(f'{s}')
+                            leaf_item2.appendChild(text)
+                            leaf_item1.appendChild(leaf_item2)
+                    leaf_shape_edge.appendChild(leaf_item1)
+                root.appendChild(leaf_shape_edge)
+
+                leaf_shape_vertex: Element = doc.createElement('Shape.Vertex')
+                for idx, vert in enumerate(obj.Shape.Vertexes):
+                    leaf_item: Element = doc.createElement('item')
+                    leaf_item.setAttribute('idx', str(idx))
+                    leaf_item.setAttribute('ShapeType', vert.ShapeType)
+                    text: Element = doc.createTextNode(f'Point {fmt_vec(vert.Point)}')
+                    leaf_item.appendChild(text)
+                    leaf_shape_vertex.appendChild(leaf_item)
+                root.appendChild(leaf_shape_vertex)
+
+                leaf_shape_sub: Element = doc.createElement('sub_shapes')
+                self.xml_sub_shapes(obj.Shape, leaf_shape_sub, doc)
+                root.appendChild(leaf_shape_sub)
+
+        xml_str = doc.toprettyxml(indent="  ")
+        return xml_str
+
+    def xml_sub_shapes(self, obj, leaf: Element, doc: Document):
+        if isinstance(obj, Part.Compound):
+            leaf_item: Element = doc.createElement('item')
+            leaf_item.setAttribute('ShapeType', obj.ShapeType)
+            leaf_item.setAttribute('TypeId', obj.TypeId)
+            leaf_item.setAttribute('Tag', obj.Tag)
+            leaf.appendChild(leaf_item)
+            self.xml_sub_shapes(obj.SubShapes, leaf_item, doc)
+        if isinstance(obj, list):
+            for idx, sub in enumerate(obj):
+                leaf_item: Element = doc.createElement('item')
+                if isinstance(sub, Part.Wire):
+                    leaf_item.setAttribute('Idx', str(idx))
+                    leaf_item.setAttribute('Type', 'Part.Wire')
+                elif isinstance(sub, Part.Edge):
+                    leaf_item.setAttribute('Idx', str(idx))
+                    leaf_item.setAttribute('Type', 'Part.Edge')
+                elif isinstance(sub, Part.Vertex):
+                    leaf_item.setAttribute('Idx', str(idx))
+                    leaf_item.setAttribute('Type', 'Part.Vertex')
+                    leaf_item.setAttribute('Point', f'{fmt_vec(sub.Point)}')
+                else:
+                    leaf_item.setAttribute('Idx', str(idx))
+                    leaf_item.setAttribute('Type', f'unexpected type: {type(sub)}')
+                leaf.appendChild(leaf_item)
+
+                if hasattr(sub, 'Curve'):
+                    leaf_item: Element = doc.createElement('item')
+                    if isinstance(sub.Curve, Part.Circle):
+                        leaf_item.setAttribute('Idx', str(idx))
+                        leaf_item.setAttribute('Type', 'Part.Circle')
+                        leaf_item.setAttribute('TypeId', f'{sub.Curve.TypeId}')
+                        leaf_item.setAttribute('Tag', f'{sub.Curve.Tag}')
+                        s = f"Center: {fmt_vec(App.Vector(sub.Curve.Center))} Radius: {sub.Curve.Radius}"
+                        text: Element = doc.createTextNode(f'{s}')
+                        leaf_item.appendChild(text)
+                    elif isinstance(sub.Curve, Part.Line):
+                        leaf_item.setAttribute('Idx', str(idx))
+                        leaf_item.setAttribute('Type', 'Part.Line')
+                        leaf_item.setAttribute('TypeId', f'{sub.Curve.TypeId}')
+                        leaf_item.setAttribute('Tag', f'{sub.Curve.Tag}')
+                        s = f"Location: {fmt_vec(App.Vector(sub.Curve.Location))}"
+                        text: Element = doc.createTextNode(f'{s}')
+                        leaf_item.appendChild(text)
+                    else:
+                        leaf_item.setAttribute('Idx', str(idx))
+                        leaf_item.setAttribute('Type', 'unexpected')
+                        s = f"type: {type(sub)}"
+                        text: Element = doc.createTextNode(f'{s}')
+                        leaf_item.appendChild(text)
+                    leaf.appendChild(leaf_item)
+
+                self.xml_sub_shapes(sub.SubShapes, leaf_item, doc)
 
     @flow
     def analyse_sketch(self):
@@ -798,79 +1011,129 @@ class CoEd:
             xps('obj.TypeId:', obj.TypeId)
             if obj.TypeId == 'Sketcher::SketchObject':
                 sk: Sketcher.Sketch = obj
-                sko: Sketcher.SketchObject = obj
+                xp('full_name:', sk.FullName)
                 xp('GeometryWithDependentParameters:', obj.getGeometryWithDependentParameters())
-                xp('full_name:', sko.FullName)
+                xps('OpenVertices')
+                for idx, item in enumerate(sk.OpenVertices):
+                    xp('idx:', idx, 'item:', fmt_vec(App.Vector(item)))
+
+                '''
+                | idx: 0 type_id: Part::GeomLineSegment start: (4.00, 8.00, 0.00) end: (20.00, 10.00, 0.00)
+                | idx: 1 type_id: Part::GeomPoint item: <Point (17.6509,4.76469,0) >
+                | idx: 2 type_id: Part::GeomArcOfCircle item: ArcOfCircle (Radius : 3, Position : (9, 14, 0), Direction : (0, 0, 1), Parameter : (1.5708, 3.14159))
+                | idx: 3 type_id: Part::GeomCircle center: (16.21, 20.24, 0.00) radius: 1.793571
+                '''
+
                 xps('Geometry')
                 for idx, item in enumerate(sk.Geometry):
                     if item.TypeId == 'Part::GeomLineSegment':
                         line: Part.LineSegment = item
-                        xp('idx:', idx, 'type_id:', item.TypeId, 'start_end:',
-                           fmt_vec(App.Vector(line.StartPoint)), fmt_vec(App.Vector(line.EndPoint)))
+                        xp('idx:', idx, 'TypeId:', item.TypeId, 'Start:',
+                           fmt_vec(App.Vector(line.StartPoint)), 'End:', fmt_vec(App.Vector(line.EndPoint)))
+                    elif item.TypeId == 'Part::GeomCircle':
+                        cir: Part.Circle = item
+                        xp(f'idx: {idx} TypeId: {cir.TypeId} Center: {fmt_vec(App.Vector(cir.Center))} '
+                           f'Radius: {cir.Radius}')
+                    elif item.TypeId == 'Part::GeomArcOfCircle':
+                        cir: Part.ArcOfCircle = item
+                        xp('idx:', idx, 'TypeId:', item.TypeId, 'item:', item)
+                        xp(f'idx: {idx} TypeId: {cir.TypeId} Center: {fmt_vec(App.Vector(cir.Center))} '
+                           f'Radius: {cir.Radius} Circle: {cir.Circle} StartPt: {cir.StartPoint} EndPt: {cir.EndPoint} '
+                           f'FirstPara: {cir.FirstParameter} LastPara: {cir.LastParameter}')
+                    elif item.TypeId == 'Part::GeomPoint':
+                        pt: Part.Point = item
+                        xp(f'idx: {idx} TypeId: {pt.TypeId} Point: {fmt_vec(App.Vector(pt.X, pt.Y, pt.Z))}')
+                        # xp(f'idx: {idx} TypeId: {pn.TypeId} Point: {fmt_vec(App.Vector(pn.X, pn.Y, pn.Z))}')
                     else:
-                        xp('idx:', idx, 'type_id:', item.TypeId, 'item:', item)
-                xps('Constraints')
-                lo = Lookup(sk)
-                for idx, item in enumerate(sk.Constraints):
-                    xp('idx:', idx, 'type_id:', item.TypeId, 'item:', item)
-                    ct: ConType = ConType(item.Type)
-                    if ct == ConType.COINCIDENT:
-                        p1 = GeoPtn(item.First, item.FirstPos)
-                        p2 = GeoPtn(item.Second, item.SecondPos)
-                        xp(f"   ({p1}) ({p2})")
-                        xp('  ', lo.lookup(p1, p2))
-                    if ct == ConType.HORIZONTAL or ct == ConType.VERTICAL:
-                        if item.Second == -2000:
-                            geo_id = item.First
-                            xp(f"   {ct.value} ({geo_id})")
-                            xp('  ', lo.lookup(geo_id))
-                        else:
-                            p1 = GeoPtn(item.First, item.FirstPos)
-                            p2 = GeoPtn(item.Second, item.SecondPos)
-                            xp(f"   {ct.value} ({p1}), ({p2})")
-                            xp('  ', lo.lookup(p1, p2))
-                    if ct == ConType.PARALLEL or ct == ConType.EQUAL:
-                        geo_id1 = item.First
-                        geo_id2 = item.Second
-                        xp(f"   {ct.value} ({geo_id1}) ({geo_id2})")
-                        xp('  ', lo.lookup(geo_id1, geo_id2))
-                    if ct == ConType.TANGENT or ct == ConType.PERPENDICULAR:
-                        # ConstraintType, GeoIndex1, GeoIndex2
-                        # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2
-                        # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2
-                        pass
+                        xp('idx:', idx, 'TypeId:', item.TypeId, 'item:', item)
+                # xps('sketch.Constraints')
+                # for idx, item in enumerate(sk.Constraints):
+                #     xp('idx:', idx, 'type_id:', item.TypeId, 'item:', item)
 
-                xps('OpenVertices')
-                for idx, item in enumerate(sko.OpenVertices):
-                    xp('idx:', idx, 'item:', fmt_vec(App.Vector(item)))
+                xps('getGeoVertexIndex')
+                idx = 0
+                while True:
+                    geo, pos = self.sketch.getGeoVertexIndex(idx)
+                    if (geo == -2000) and (pos == 0):
+                        break
+                    xp(f'idx: {idx} ({geo}.{pos})')
+                    idx += 1
+
+                xps('constraints_get_list')
+                co_list = self.constraints_get_list()
+                lo = Lookup(sk)
+                for idx, item in enumerate(co_list):
+                    xp(f"idx: '{idx}' type_id: '{item.type_id}' sub_type: '{item.sub_type}' item: {item}")
+                    # ct = ConType(item.type_id)
+                    s1, s2 = lo.lookup(ConsTrans(item.co_idx, item.type_id, item.sub_type, item.fmt))
+                    xp(' ', s2)
+                    xp(' ', list(s1))
+
+                    # if ct == ConType.COINCIDENT:
+                    # if ct == ConType.HORIZONTAL or ct == ConType.VERTICAL:
+                    # if ct == ConType.PARALLEL or ct == ConType.EQUAL:
+                    # if ct == ConType.TANGENT or ct == ConType.PERPENDICULAR:
+                    # if ct == ConType.DISTANCE:
+                    # if ct == ConType.DISTANCEX or ct == ConType.DISTANCEY:
+                    # if ct == ConType.ANGLE:
+                    # if ct == ConType.RADIUS or ct == ConType.DIAMETER or ct == ConType.WEIGHT:
+                    # if ct == ConType.POINTONOBJECT:
+                    # if ct == ConType.SYMMETRIC:
+                    # if ct == ConType.INTERNALALIGNMENT:
+                    # if ct == ConType.SNELLSLAW:
+                    # if ct == ConType.BLOCK:
+
                 xps('Shape.Edges')
                 for idx, edg in enumerate(obj.Shape.Edges):
                     xp('idx', idx, 'shape_type:', edg.ShapeType)
                     if edg.ShapeType == 'Edge':
+                        if hasattr(edg, 'Curve'):
+                            # xp(f"{' ' *i}  idx: {idx} hasattr(sub, 'Curve')")
+                            if isinstance(edg.Curve, Part.Circle):
+                                xp(f"  idx: {idx} Curve: Part.Circle Center: {fmt_vec(App.Vector(edg.Curve.Center))} Radius: {edg.Curve.Radius} TypeId: {edg.Curve.TypeId} Tag: {edg.Curve.Tag}")
+                            elif isinstance(edg.Curve, Part.Line):
+                                xp(f"  idx: {idx} Curve: Part.Line Location: {fmt_vec(App.Vector(edg.Curve.Location))} TypeId: {edg.Curve.TypeId} Tag: {edg.Curve.Tag}")
+                            else:
+                                xp(f"  idx: {idx} Curve: unexpected type: {type(edg)}")
                         for idy, vert in enumerate(edg.SubShapes):
-                            geo, pos = self.sketch.getGeoVertexIndex(idy)
-                            xp(f'   idx: {idy} geo: ({geo},{pos}) shape: {vert.ShapeType} pt: {fmt_vec(vert.Point)}')
+                            xp(f'    idx: {idy} shape: {vert.ShapeType} pt: {fmt_vec(vert.Point)}')
                     else:
                         xp('not an edge')
                 xps('Shape.Vertexes')
                 for idx, vert in enumerate(obj.Shape.Vertexes):
-                    geo, pos = self.sketch.getGeoVertexIndex(idx)
-                    xp(f'   idx: {idx} geo: ({geo},{pos}) shape: {vert.ShapeType} pt: {fmt_vec(vert.Point)}')
+                    xp(f'idx: {idx} shape: {vert.ShapeType} pt: {fmt_vec(vert.Point)}')
+
+                xps('sub_shapes')
+                self.sub_shapes(obj.Shape)
 
         xps()
-    # Vertex.ShapeType, .Point, .TypeId, .x, .y, .z
-    # Edge.TypeId, .Vertexes, .SubShapes, .ShapeType
-    # Sketch.Geometry, .Constraints, .FullName, .Name, .OpenVertices, .Shape, .TypeId
-    # Shape.dumpToString() -> bulky output
-    # connectEdgesToWires(TopoShape)
-    # def Closed(self) -> bool:
-    #     """Returns true if the edge is closed"""
-    # def Continuity(self) -> str:
-    #     """Returns the continuity"""
-    # def Degenerated(self) -> bool:
-    #     """Returns true if the edge is degenerated"""
 
+    def sub_shapes(self, obj, i=0):
+        if isinstance(obj, Part.Compound):
+            xp(' '*i, 'ShapeType', obj.ShapeType, 'TypeId', obj.TypeId, 'Tag', obj.Tag)
+            self.sub_shapes(obj.SubShapes, i+2)
+        if isinstance(obj, list):
+            for idx, sub in enumerate(obj):
+                # xp(f"{' ' *i}  idx: {idx} ShapeType: {sub.ShapeType} TypeId: {sub.TypeId} Tag: {sub.Tag} ")
+                if isinstance(sub, Part.Wire):
+                    xp(f"{' '*i}  idx: {idx} Part.Wire")
+                elif isinstance(sub, Part.Edge):
+                    xp(f"{' '*i}  idx: {idx} Part.Edge")
+                elif isinstance(sub, Part.Vertex):
+                    xp(f"{' ' *i}  idx: {idx} Part.Vertex pt: {fmt_vec(sub.Point)}")
+                else:
+                    xp(f"{' ' *i}  idx: {idx} unexpected type: {type(sub)}")
 
+                if hasattr(sub, 'Curve'):
+                    # xp(f"{' ' *i}  idx: {idx} hasattr(sub, 'Curve')")
+                    if isinstance(sub.Curve, Part.Circle):
+                        xp(f"{' ' *i}  idx: {idx} Curve: Part.Circle Center: {fmt_vec(App.Vector(sub.Curve.Center))} Radius: {sub.Curve.Radius} TypeId: {sub.Curve.TypeId} Tag: {sub.Curve.Tag}")
+                    elif isinstance(sub.Curve, Part.Line):
+                        xp(f"{' ' *i}  idx: {idx} Curve: Part.Line Location: {fmt_vec(App.Vector(sub.Curve.Location))} TypeId: {sub.Curve.TypeId} Tag: {sub.Curve.Tag}")
+                    else:
+                        xp(f"{' ' *i}  idx: {idx} Curve: unexpected type: {type(sub)}")
+
+                self.sub_shapes(sub.SubShapes, i+2)
 
     @flow
     def print_edge_angel_list(self):

@@ -133,6 +133,7 @@ class MyTest(unittest.TestCase):
 
         # ! show the new stuff in the gui
         App.getDocument(DOC).recompute()
+        register()
         self.ex = main_g(self.ActiveSketch, self.app)
         self.app.exec_()
         Cfg().save()
@@ -153,6 +154,16 @@ class MyTest(unittest.TestCase):
         self.ex = main_g(self.ActiveSketch, self.app)
         self.app.exec_()
         Cfg().save()
+
+    def testCircle(self):
+        add_geo(Part.Circle(App.Vector(4.5, 3.5, 0), App.Vector(0, 0, 1), 2))
+        add_geo(Part.LineSegment(App.Vector(5.0, 7.0, 0.0), App.Vector(7.0, 8.0, 0.0)), False)
+        App.getDocument(DOC).recompute()
+        register()
+        self.ex = main_g(self.ActiveSketch, self.app)
+        self.app.exec_()
+        Cfg().save()
+
 
     def tearDown(self) -> None:
         file.close()

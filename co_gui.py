@@ -1,4 +1,7 @@
-from typing import List, Set
+from typing import List, Set, Dict, Tuple, Callable
+
+import FreeCAD as App
+import FreeCADGui as Gui
 
 from PySide2.QtCore import Qt, QItemSelectionModel, QModelIndex, Slot
 from PySide2.QtGui import QFont
@@ -6,23 +9,28 @@ from PySide2.QtWidgets import QComboBox, QWidget, QVBoxLayout, QPlainTextEdit, Q
     QApplication, QHBoxLayout, QPushButton, QTabWidget, QLabel, QTableWidget, QTableWidgetItem, QSpinBox, \
     QAbstractItemView, QHeaderView, QGroupBox, QDoubleSpinBox, QCheckBox, QBoxLayout
 
+
 from co_config import CfgFonts
 from co_impl import CoEd
-from co_cmn import ConType
+from co_cmn import ConType, ConsTrans, GeoPt, GeoPtn, pt_typ_int
+from co_lookup import Lookup
+from co_observer import EventProvider
 from co_style import XMLHighlighter, my_style
-from co_logger import xp, _co_g, _hv_g, _rd_g, flow, _ly_g, xps, _cs_g
+from co_logger import xp, _co, _hv, _rd, flow, _ly, xps, _cs, Profile, _xy, _fl, _ob_s
 
 _QL = QBoxLayout
 
 
 # noinspection PyArgumentList
 class CoEdGui(QWidget):
-    # Constraint, Coincident, Horizontal/Vertical
-    # Rad()ius, X/Y (Distance)
+
     @flow(short=True)
     def __init__(self, base: CoEd, parent=None):
         super().__init__(parent)
         self.base: CoEd = base
+        # selection_observer_receiver(self)
+        self.ev = EventProvider.ev
+        self.ev.add_selection.connect(self.on_sel_chg_event)
         flags: Qt.WindowFlags = Qt.Window
         flags |= Qt.WindowStaysOnTopHint
         self.setWindowFlags(flags)
@@ -45,6 +53,9 @@ class CoEdGui(QWidget):
 
         self.base.ev.cons_chg.connect(self.on_cons_chg)
         self.base.ev.coin_pts_chg.connect(self.on_coin_chg)
+        self.base.ev.xy_edg_chg.connect(self.on_xy_chg)
+        self.base.ev.rad_chg.connect(self.on_rad_chg)
+        self.base.ev.hv_edg_chg.connect(self.on_hv_chg)
         self.tabs.currentChanged.connect(self.on_cur_tab_chg)
 
         # -----------------------------------------------------
@@ -59,9 +70,13 @@ class CoEdGui(QWidget):
         self.tab_cfg.setLayout(self.cfg_lay_get())
         # -----------------------------------------------------
         self.geo_txt_edt = QPlainTextEdit()
+        self.geo_btn_geo = QPushButton('geo')
+        self.geo_btn_ext = QPushButton('ext')
         self.tab_geo.setLayout(self.geo_lay_get())
         # -----------------------------------------------------
         self.xy_grp_box: QGroupBox = QGroupBox(None)
+        self.xy_chk_box_x: QCheckBox = QCheckBox()
+        self.xy_chk_box_y: QCheckBox = QCheckBox()
         self.xy_btn_create: QPushButton = QPushButton()
         self.xy_btn_create.setDisabled(True)
         self.xy_tbl_wid: QTableWidget = QTableWidget()
@@ -151,13 +166,22 @@ class CoEdGui(QWidget):
         self.geo_txt_edt.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.geo_txt_edt.highlighter = XMLHighlighter(self.geo_txt_edt.document())
         self.geo_txt_edt.setPlainText(self.base.geo_xml_get())
-        lay = QVBoxLayout()
-        lay.addWidget(self.geo_txt_edt)
-        return lay
+        self.geo_btn_geo.clicked.connect(self.on_geo_btn_clk_geo)
+        self.geo_btn_ext.clicked.connect(self.on_geo_btn_clk_ext)
+        lis = [QVBoxLayout(),
+               self.geo_txt_edt,
+               [QHBoxLayout(), _QL.addStretch, self.geo_btn_geo, (_QL.addSpacing, 20), self.geo_btn_ext]]
+        return self.lay_get(lis)
 
     @flow
     def xy_lay_get(self) -> QBoxLayout:
         self.xy_grp_box.setTitle(u"X/Y Distance")
+        self.xy_chk_box_x.setText('X')
+        self.xy_chk_box_x.setChecked(True)
+        self.xy_chk_box_x.stateChanged.connect(self.on_xy_chk_x_state_chg)
+        self.xy_chk_box_y.setText('Y')
+        self.xy_chk_box_y.setChecked(True)
+        self.xy_chk_box_y.stateChanged.connect(self.on_xy_chk_y_state_chg)
         self.xy_btn_create.clicked.connect(self.on_xy_create_btn_clk)
         self.xy_btn_create.setText(u"Create")
         self.xy_tbl_wid = self.xy_prep_table(self.xy_grp_box)
@@ -165,7 +189,7 @@ class CoEdGui(QWidget):
         # noinspection PyArgumentList
         li = [QVBoxLayout(), self.xy_grp_box,
               [QVBoxLayout(self.xy_grp_box),
-               [QHBoxLayout(), _QL.addStretch, self.xy_btn_create],
+               [QHBoxLayout(), self.xy_chk_box_x, self.xy_chk_box_y, _QL.addStretch, self.xy_btn_create],
                self.xy_tbl_wid]]
         return self.lay_get(li)
 
@@ -250,20 +274,20 @@ class CoEdGui(QWidget):
         w_list = [QPushButton, QDoubleSpinBox, QTableWidget, QGroupBox, QComboBox, QSpinBox, QPlainTextEdit]
         layout = None
         for obj in obj_list:
-            xp(type(obj).__name__, obj, **_ly_g)
+            xp(type(obj).__name__, obj, **_ly)
             if isinstance(obj, QBoxLayout):
-                xp('   layout:', **_ly_g)
+                xp('   layout:', **_ly)
                 layout = obj
             elif isinstance(obj, list):
-                xp('   list:', **_ly_g)
+                xp('   list:', **_ly)
                 layout.addLayout(self.lay_get(obj))
             elif type(obj).__name__ == 'tuple':
                 func, param = obj
-                xp('   tuple:', func.__name__, param, **_ly_g)
+                xp('   tuple:', func.__name__, param, **_ly)
                 if func.__name__ == 'addSpacing':
                     getattr(layout, func.__name__)(param)
             elif type(obj).__name__ == 'method_descriptor':
-                xp('   method:', obj.__name__, **_ly_g)
+                xp('   method:', obj.__name__, **_ly)
                 if obj.__name__ == 'addStretch':
                     getattr(layout, obj.__name__)()
                 else:
@@ -273,37 +297,59 @@ class CoEdGui(QWidget):
             elif any(isinstance(obj, x) for x in w_list):
                 layout.addWidget(obj)
             else:
-                xp('------ UNEXPECTED OBJECT ----------', obj, **_ly_g)
+                xp('------ UNEXPECTED OBJECT ----------', obj, **_ly)
         return layout
 
     # -------------------------------------------------------------------------
+    @flow
+    @Slot(object, object, object, object)
+    def on_sel_chg_event(self, doc, obj, sub, pnt):
+        xp(f'on_sel_chg_event doc:', str(doc), 'obj:', str(obj), 'sub:', str(sub), 'pnt', str(pnt), **_ob_s)
+        self.tbl_clear_select(sub, pnt)
 
     @flow
     @Slot(str)
     def on_cons_chg(self, words):
-        xp('Constraints changed', words, **_cs_g)
+        xp('Constraints changed', words, **_cs)
         co_list: List[CoEd.Constraint] = self.base.constraints_get_list()
         self.cons_update_combo(co_list)
 
     @flow
     @Slot(str)
     def on_coin_chg(self, words):
-        xp('Coin changed', words, **_co_g)
+        xp('Coincident changed', words, **_co)
+
+    @flow
+    @Slot(str)
+    def on_hv_chg(self, words):
+        xp('HV changed', words, **_co)
+
+    @flow
+    @Slot(str)
+    def on_xy_chg(self, words):
+        xp('XY changed', words, **_co)
+
+    @flow
+    @Slot(str)
+    def on_rad_chg(self, words):
+        xp('XY changed', words, **_co)
 
     @flow
     def on_cur_tab_chg(self, index: int):
-        xp('cur_tab:', index, **_ly_g)
-        switcher = {
-            0: self.cons_update_table,
-            1: self.coin_update_table,
-            2: self.hv_update_table,
-            3: self.rad_update_table,
-            4: self.xy_update_table,
-            5: '',
-            6: ''
+        xp('cur_tab:', index, **_ly)
+        info: Dict[int, Tuple[QTableWidget, Callable]] = {
+            0: (self.cons_tbl_wid, self.cons_update_table),
+            1: (self.coin_tbl_wid, self.coin_update_table),
+            2: (self.hv_tbl_wid, self.hv_update_table),
+            3: (self.rad_tbl_wid, self.rad_update_table),
+            4: (self.xy_tbl_wid, self.xy_update_table),
         }
         if index in range(5):
-            switcher.get(index)()
+            tbl = info.get(index)[0]
+            tbl.blockSignals(True)
+            tbl.clearSelection()
+            tbl.blockSignals(False)
+            info.get(index)[1]()
 
     # ---------
 
@@ -320,28 +366,28 @@ class CoEdGui(QWidget):
 
     @flow
     def on_cfg_fnt_size_val_chg(self, value):
-        xp('fnt size', value, **_ly_g)
+        xp('fnt size', value, **_ly)
         f: QFont = self.cfg_txt_edt.font()
         f.setPointSize(value)
-        xp('new', f, 'old', self.cfg_txt_edt.font(), **_ly_g)
+        xp('new', f, 'old', self.cfg_txt_edt.font(), **_ly)
         self.cfg_txt_edt.setFont(f)
         self.cfg_fnts.font_set(self.cfg_fnts.FONT_CFG_EDT, self.cfg_txt_edt.font())
 
     @flow
     def on_cfg_fnt_box_chg(self, font: QFont):
-        xp('fnt', font, **_ly_g)
+        xp('fnt', font, **_ly)
         # ! some mysterious problem forcing to do the following
         a_font = QFont()
         a_font.fromString(font.toString())
         a_font.setPointSize(self.cfg_font_size.value())
-        xp('new', font, 'old', self.cfg_txt_edt.font(), **_ly_g)
+        xp('new', font, 'old', self.cfg_txt_edt.font(), **_ly)
         self.cfg_txt_edt.setFont(a_font)
-        xp('after', self.cfg_txt_edt.font(), **_ly_g)
+        xp('after', self.cfg_txt_edt.font(), **_ly)
         self.cfg_fnts.font_set(self.cfg_fnts.FONT_CFG_EDT, self.cfg_txt_edt.font())
 
     @flow
     def on_cfg_btn_clk_tab(self):
-        xp('tab', '', 'cfg', self.cfg_txt_edt.font(), **_ly_g)
+        xp('tab', '', 'cfg', self.cfg_txt_edt.font(), **_ly)
         self.cons_tbl_wid.setFont(self.cfg_txt_edt.font())
         self.coin_tbl_wid.setFont(self.cfg_txt_edt.font())
         self.hv_tbl_wid.setFont(self.cfg_txt_edt.font())
@@ -351,7 +397,7 @@ class CoEdGui(QWidget):
 
     @flow
     def on_cfg_btn_clk_geo(self):
-        xp('geo', self.geo_txt_edt.font(), 'cfg', self.cfg_txt_edt.font(), **_ly_g)
+        xp('geo', self.geo_txt_edt.font(), 'cfg', self.cfg_txt_edt.font(), **_ly)
         self.geo_txt_edt.setFont(self.cfg_txt_edt.font())
         self.cfg_fnts.font_set(CfgFonts.FONT_GEO_EDT, self.geo_txt_edt.font())
 
@@ -368,7 +414,7 @@ class CoEdGui(QWidget):
         self.rad_tbl_wid.setFont(f_tbl)
         self.geo_txt_edt.setFont(f_geo)
         self.cfg_txt_edt.setFont(f_cfg)
-        xp('geo', f_geo, 'cfg', f_cfg, **_ly_g)
+        xp('geo', f_geo, 'cfg', f_cfg, **_ly)
         self.cfg_font_box.setCurrentFont(f_cfg)
         self.cfg_font_size.setValue(f_cfg.pointSize())
 
@@ -376,21 +422,34 @@ class CoEdGui(QWidget):
     def on_cfg_btn_clk_save(self):
         self.cfg_fnts.save()
 
+    @flow
+    def on_geo_btn_clk_geo(self):
+        self.geo_txt_edt.setPlainText(self.base.geo_xml_get())
+
+    @flow
+    def on_geo_btn_clk_ext(self):
+        self.base.analyse_sketch()
+        self.geo_txt_edt.setPlainText(self.base.sketch_info_xml_get())
+
     # ---------
 
     @flow
+    def on_xy_chk_x_state_chg(self, obj):
+        if not self.xy_chk_box_x.isChecked():
+            self.xy_chk_box_y.setChecked(True)
+
+    @flow
+    def on_xy_chk_y_state_chg(self, obj):
+        if not self.xy_chk_box_y.isChecked():
+            self.xy_chk_box_x.setChecked(True)
+
+    @flow
     def on_xy_create_btn_clk(self):
-        self.xy_create()
+        self.xy_create(self.xy_chk_box_x.isChecked(), self.xy_chk_box_y.isChecked())
 
     @flow
     def on_xy_tbl_sel_chg(self):
-        indexes = self.xy_tbl_wid.selectionModel().selectedRows()
-        rows: List = [x.row() for x in sorted(indexes)]
-        xp(f'selected: {rows}')
-        if len(rows) == 0:
-            self.xy_btn_create.setDisabled(True)
-        else:
-            self.xy_btn_create.setDisabled(False)
+        self.xy_selected()
 
     @flow
     def on_rad_create_btn_clk(self):
@@ -410,13 +469,7 @@ class CoEdGui(QWidget):
 
     @flow
     def on_rad_tbl_sel_chg(self):
-        indexes = self.rad_tbl_wid.selectionModel().selectedRows()
-        rows: List = [x.row() for x in sorted(indexes)]
-        xp(f'selected: {rows}')
-        if len(rows) == 0:
-            self.rad_btn_create.setDisabled(True)
-        else:
-            self.rad_btn_create.setDisabled(False)
+        self.rad_selected()
 
     @flow
     def on_hv_create_btn_clk(self):
@@ -431,13 +484,7 @@ class CoEdGui(QWidget):
 
     @flow
     def on_hv_tbl_sel_chg(self):
-        indexes = self.hv_tbl_wid.selectionModel().selectedRows()
-        rows: List = [x.row() for x in sorted(indexes)]
-        xp(f'selected: {rows}')
-        if len(rows) == 0:
-            self.hv_btn_create.setDisabled(True)
-        else:
-            self.hv_btn_create.setDisabled(False)
+        self.hv_selected()
 
     @flow
     def on_coin_create_btn_clk(self):
@@ -452,13 +499,7 @@ class CoEdGui(QWidget):
 
     @flow
     def on_coin_tbl_sel_chg(self):
-        indexes = self.coin_tbl_wid.selectionModel().selectedRows()
-        rows: List = [x.row() for x in sorted(indexes)]
-        xp(f'selected: {rows}')
-        if len(rows) == 0:
-            self.coin_btn_create.setDisabled(True)
-        else:
-            self.coin_btn_create.setDisabled(False)
+        self.coin_selected()
 
     @flow
     def on_cons_delete_btn_clk(self):
@@ -467,28 +508,23 @@ class CoEdGui(QWidget):
     @flow
     def on_cons_type_cmb_chg(self, txt):
         ct: ConType = ConType(txt)
-        import cProfile, pstats
-        profiler = cProfile.Profile()
-        profiler.enable()
-        self.cons_update_table(ct)
-        profiler.disable()
-        stats = pstats.Stats(profiler).sort_stats('cumtime')
-        stats.print_stats()
-
+        with Profile(enable=False):
+            self.cons_update_table(ct)
 
     @flow
     def on_cons_tbl_sel_chg(self):
-        self.cons_select()
+        self.cons_selected()
     # -------------------------------------------------------------------------
 
     @flow
-    def xy_create(self):
-        mod: QItemSelectionModel = self.rad_tbl_wid.selectionModel()
+    def xy_create(self, x: bool, y: bool):
+        mod: QItemSelectionModel = self.xy_tbl_wid.selectionModel()
         rows: List[QModelIndex] = mod.selectedRows(2)
-        create_list: List[int] = [x.data() for x in rows]
+        create_list: List[int] = [x.data().geo_id for x in rows]
+        xp('create_list', create_list, **_xy)
         for idx in rows:
-            xp(idx.row(), ':', idx.data(), **_rd_g)
-        self.base.xy_dist_create(create_list)
+            xp('row', idx.row(), ':', idx.data(), **_xy)
+        self.base.xy_dist_create(create_list, x, y)
         self.xy_update_table()
 
     @flow
@@ -515,14 +551,36 @@ class CoEdGui(QWidget):
             fmt = s.format(item.start.x, item.start.y, item.end.x, item.end.y)
             self.xy_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
             fmt2 = "Id: {}\nx {} y {}".format(item.geo_id, item.has_x, item.has_y)
+            xp(f'geo {item.geo_id} x {item.has_x} y {item.has_y}', **_xy)
             w_item = QTableWidgetItem(fmt2)
             w_item.setTextAlignment(Qt.AlignCenter)
             self.xy_tbl_wid.setItem(0, 1, w_item)
             w_item = QTableWidgetItem('')
-            w_item.setData(Qt.DisplayRole, item.geo_id)
-            xp('col 3', item.geo_id, **_rd_g)
+            w_item.setData(Qt.DisplayRole, item)
+            # w_item.setData(Qt.DisplayRole, item.geo_id)
+            xp('col 3', item.geo_id, **_xy)
             self.xy_tbl_wid.setItem(0, 2, w_item)
         self.xy_tbl_wid.setSortingEnabled(__sorting_enabled)
+
+    @flow
+    def xy_selected(self):
+        indexes: List[QModelIndex] = self.xy_tbl_wid.selectionModel().selectedRows(2)
+        rows: List = [x.row() for x in sorted(indexes)]
+        xp(f'selected: {rows}', **_xy)
+        if len(rows) == 0:
+            self.xy_btn_create.setDisabled(True)
+        else:
+            self.xy_btn_create.setDisabled(False)
+
+        doc_name = App.activeDocument().Name
+        Gui.Selection.clearSelection(doc_name, True)
+        ed_info = Gui.ActiveDocument.InEditInfo
+        sk_name = ed_info[0].Name
+
+        for item in indexes:
+            xy: CoEd.XyEdge = item.data()
+            xp(f'row: {str(item.row())} idx: {xy.geo_id} cons: {xy}', **_xy)
+            Gui.Selection.addSelection(doc_name, sk_name, f'Edge{xy.geo_id + 1}')
 
     # -------------------------------------------------------------------------
 
@@ -544,9 +602,9 @@ class CoEdGui(QWidget):
             rad = self.base.radius
         mod: QItemSelectionModel = self.rad_tbl_wid.selectionModel()
         rows: List[QModelIndex] = mod.selectedRows(2)
-        create_list: List[int] = [x.data() for x in rows]
+        create_list: List[CoEd.Circle] = [x.data() for x in rows]
         for idx in rows:
-            xp(idx.row(), ':', idx.data(), **_rd_g)
+            xp(idx.row(), ':', idx.data(), **_rd)
         self.base.rad_dia_create(create_list, rad)
         self.rad_update_table()
 
@@ -556,7 +614,7 @@ class CoEdGui(QWidget):
         __sorting_enabled = self.rad_tbl_wid.isSortingEnabled()
         self.rad_tbl_wid.setSortingEnabled(False)
         cir_list: List[CoEd.Circle] = self.base.circle_get_list()
-        xp('->', cir_list, **_rd_g)
+        xp('->', cir_list, **_rd)
         for item in cir_list:
             self.rad_tbl_wid.insertRow(0)
             fmt = "x: {:.2f} y: {:.2f}".format(item.center_x, item.center_y)
@@ -566,10 +624,40 @@ class CoEdGui(QWidget):
             w_item.setTextAlignment(Qt.AlignCenter)
             self.rad_tbl_wid.setItem(0, 1, w_item)
             w_item = QTableWidgetItem('')
-            w_item.setData(Qt.DisplayRole, item.geo_id)
-            xp('col 3', item.geo_id, **_rd_g)
+            w_item.setData(Qt.DisplayRole, item)
+            xp('col 3', item.geo_id, **_rd)
             self.rad_tbl_wid.setItem(0, 2, w_item)
         self.rad_tbl_wid.setSortingEnabled(__sorting_enabled)
+
+    @flow
+    def rad_selected(self):
+        indexes: List[QModelIndex] = self.rad_tbl_wid.selectionModel().selectedRows(2)
+        rows: List = [x.row() for x in sorted(indexes)]
+        xp(f'selected: {rows}', **_rd)
+        if len(rows) == 0:
+            self.rad_btn_create.setDisabled(True)
+        else:
+            self.rad_btn_create.setDisabled(False)
+
+        doc_name = App.activeDocument().Name
+        Gui.Selection.clearSelection(doc_name, True)
+        ed_info = Gui.ActiveDocument.InEditInfo
+        sk_name = ed_info[0].Name
+
+        for item in indexes:
+            rad: CoEd.Circle = item.data()
+            xp(f'row: {str(item.row())} idx: {rad.geo_id} cons: {rad}', **_rd)
+            Gui.Selection.addSelection(doc_name, sk_name, f'Edge{rad.geo_id + 1}')
+            idx = 0
+            while True:
+                geo, pos = self.base.sketch.getGeoVertexIndex(idx)
+                if (geo == rad.geo_id) and (pos == 3):
+                    Gui.Selection.addSelection(doc_name, sk_name, f'Vertex{idx + 1}')
+                    xp(f'Vertex{idx + 1} idx: {idx} geo: ({geo}.{pos})', **_rd)
+                if (geo == -2000) and (pos == 0):
+                    xp(f'unexpected, no vertex found', **_rd)
+                    break
+                idx += 1
 
     # -------------------------------------------------------------------------
 
@@ -589,9 +677,9 @@ class CoEdGui(QWidget):
     def hv_create(self):
         mod: QItemSelectionModel = self.hv_tbl_wid.selectionModel()
         rows: List[QModelIndex] = mod.selectedRows(2)
-        create_list: List[int] = [x.data() for x in rows]
+        create_list: List[CoEd.HvEdge] = [x.data() for x in rows]
         for idx in rows:
-            xp(idx.row(), ':', idx.data(), **_hv_g)
+            xp('row', idx.row(), ':', idx.data(), **_hv)
         self.base.hv_create(create_list)
         self.hv_update_table()
 
@@ -607,21 +695,41 @@ class CoEdGui(QWidget):
             self.hv_tbl_wid.insertRow(0)
             fmt2 = "x {:.2f} y {:.2f} : x {:.2f} y {:.2f}".format(item.pt_start.x, item.pt_start.y,
                                                                   item.pt_end.x, item.pt_end.y)
-            xp('col 1', fmt2, **_hv_g)
+            xp('col 1', fmt2, **_hv)
             fmt = "{: 6.2f} {: 6.2f}\n{: 6.2f} {: 6.2f}".format(item.pt_start.x, item.pt_start.y,
                                                                 item.pt_end.x, item.pt_end.y)
             self.hv_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
-            fmt2 = "Id {} xa {:.2f} : ya {:.2f}".format(item.geo_idx + 1, item.x_angel, item.y_angel)
-            xp('col 2', fmt2, **_hv_g)
-            fmt = "Id {} \nxa {:.2f} ya {:.2f}".format(item.geo_idx + 1, item.x_angel, item.y_angel)
+            fmt2 = "Id {} xa {:.2f} : ya {:.2f}".format(item.geo_idx, item.x_angel, item.y_angel)
+            xp('col 2', fmt2, **_hv)
+            fmt = "Id {} \nxa {:.2f} ya {:.2f}".format(item.geo_idx, item.x_angel, item.y_angel)
             w_item = QTableWidgetItem(fmt)
             w_item.setTextAlignment(Qt.AlignCenter)
             self.hv_tbl_wid.setItem(0, 1, w_item)
             w_item2 = QTableWidgetItem()
-            w_item2.setData(Qt.DisplayRole, idx)
-            xp('col 3', idx, **_hv_g)
+            w_item2.setData(Qt.DisplayRole, item)
+            xp('col 3', idx, **_hv)
             self.hv_tbl_wid.setItem(0, 2, w_item2)
         self.hv_tbl_wid.setSortingEnabled(__sorting_enabled)
+
+    @flow
+    def hv_selected(self):
+        indexes: List[QModelIndex] = self.hv_tbl_wid.selectionModel().selectedRows(2)
+        rows: List = [x.row() for x in sorted(indexes)]
+        xp(f'selected: {rows}', **_hv)
+        if len(rows) == 0:
+            self.hv_btn_create.setDisabled(True)
+        else:
+            self.hv_btn_create.setDisabled(False)
+
+        doc_name = App.activeDocument().Name
+        Gui.Selection.clearSelection(doc_name, True)
+        ed_info = Gui.ActiveDocument.InEditInfo
+        sk_name = ed_info[0].Name
+
+        for item in indexes:
+            hv: CoEd.HvEdge = item.data()
+            xp(f'row: {str(item.row())} idx: {hv.geo_idx} cons: {hv}', **_hv)
+            Gui.Selection.addSelection(doc_name, sk_name, f'Edge{hv.geo_idx + 1}')
 
     # -------------------------------------------------------------------------
 
@@ -629,9 +737,9 @@ class CoEdGui(QWidget):
     def coin_create(self):
         mod: QItemSelectionModel = self.coin_tbl_wid.selectionModel()
         rows: List[QModelIndex] = mod.selectedRows(2)
-        create_list: List[int] = [x.data(Qt.DisplayRole) for x in rows]
+        create_list: List[CoEd.Point] = [x.data() for x in rows]
         for idx in rows:
-            xp(idx.row(), ':', idx.data(Qt.DisplayRole), **_co_g)
+            xp(idx.row(), ':', idx.data(), **_co)
         self.base.coin_create(create_list)
         self.coin_update_table()
 
@@ -661,14 +769,47 @@ class CoEdGui(QWidget):
                 self.coin_tbl_wid.insertRow(0)
                 fmt = "{0: 6.2f} {1: 6.2f}".format(pt.geo_item_pt.x, pt.geo_item_pt.y)
                 self.coin_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
-                fm = ''.join("{0:2}.{1} ".format(x.geo_id + 1, x.type_id) for x in pt.coin_pts)
-                xp('fm:', fm, **_co_g)
+                fm = ''.join("{0:2}.{1} ".format(x.geo_id, x.type_id) for x in pt.coin_pts)
+                xp('fm:', fm, **_co)
                 self.coin_tbl_wid.setItem(0, 1, QTableWidgetItem(fm))
                 w_item = QTableWidgetItem()
-                w_item.setData(Qt.DisplayRole, i)
+                w_item.setData(Qt.DisplayRole, pt)
+                # w_item.setData(Qt.DisplayRole, i)
                 self.coin_tbl_wid.setItem(0, 2, w_item)
-                xp('new row: Id', i, fmt, fm, **_co_g)
+                xp('new row: Id', i, fmt, fm, **_co)
         self.coin_tbl_wid.setSortingEnabled(__sorting_enabled)
+
+    @flow
+    def coin_selected(self):
+        indexes: List[QModelIndex] = self.coin_tbl_wid.selectionModel().selectedRows(2)
+        rows: List = [x.row() for x in sorted(indexes)]
+        xp(f'selected: {rows}', **_co)
+        if len(rows) == 0:
+            self.coin_btn_create.setDisabled(True)
+        else:
+            self.coin_btn_create.setDisabled(False)
+
+        doc_name = App.activeDocument().Name
+        Gui.Selection.clearSelection(doc_name, True)
+        ed_info = Gui.ActiveDocument.InEditInfo
+        sk_name = ed_info[0].Name
+
+        for item in indexes:
+            coin: CoEd.Point = item.data()
+            xp(f'row: {str(item.row())} coin: {coin}', **_co)
+            lst: List[GeoPt] = coin.coin_pts
+            for pt in lst:
+                ptn: GeoPtn = GeoPtn(pt.geo_id, pt_typ_int[pt.type_id])
+                idx = 0
+                while True:
+                    geo, pos = self.base.sketch.getGeoVertexIndex(idx)
+                    if (geo == ptn.geo_id) and (pos == ptn.type_id):
+                        Gui.Selection.addSelection(doc_name, sk_name, f'Vertex{idx + 1}')
+                        xp(f'Vertex{idx + 1} idx: {idx} geo: ({geo}.{pos})', **_co)
+                    if (geo == -2000) and (pos == 0):
+                        xp(f'unexpected, no vertex found', **_co)
+                        break
+                    idx += 1
 
     # -------------------------------------------------------------------------
 
@@ -689,8 +830,10 @@ class CoEdGui(QWidget):
         __sorting_enabled = self.cons_tbl_wid.isSortingEnabled()
         self.cons_tbl_wid.setSortingEnabled(False)
         co_list: List[CoEd.Constraint] = self.base.constraints_get_list()
-        for item in co_list:
+        for idx, item in enumerate(co_list):
             if typ == ConType.ALL or typ == ConType(item.type_id):
+                li: List[int] = list()
+                li.insert(0, idx)
                 self.cons_tbl_wid.insertRow(0)
                 self.cons_tbl_wid.setItem(0, 0, QTableWidgetItem(item.type_id))
                 self.cons_tbl_wid.setItem(0, 1, QTableWidgetItem(str(item)))
@@ -699,24 +842,36 @@ class CoEdGui(QWidget):
                 # w_item.setData(Qt.DisplayRole, item.co_idx)
                 self.cons_tbl_wid.setItem(0, 2, w_item)
         self.cons_tbl_wid.setSortingEnabled(__sorting_enabled)
-        self.base.analyse_sketch()
 
-    def cons_select(self):
+    @flow
+    def cons_selected(self):
         indexes: List[QModelIndex] = self.cons_tbl_wid.selectionModel().selectedRows(2)
         rows: List = [x.row() for x in sorted(indexes)]
-        xp(f'selected: {rows}')
+        xp(f'selected: {rows}', **_cs)
         if len(rows) == 0:
             self.cons_btn_del.setDisabled(True)
         else:
             self.cons_btn_del.setDisabled(False)
+
+        lo = Lookup(self.base.sketch)
+        doc_name = App.activeDocument().Name
+        Gui.Selection.clearSelection(doc_name, True)
+        ed_info = Gui.ActiveDocument.InEditInfo
+        sk_name = ed_info[0].Name
+
         for item in indexes:
             co: CoEd.Constraint = item.data()
-            xp(str(item.row()), ':', str(co), ':', co.co_idx)
-            # ed_info = Gui.ActiveDocument.InEditInfo
-            # doc_name = App.activeDocument().Name
+            xp(f'row: {str(item.row())} idx: {co.co_idx} cons: {co}', **_cs)
+            s1, s2 = lo.lookup(ConsTrans(co.co_idx, co.type_id, co.sub_type, co.fmt))
+            xp(' ', s2, **_cs)
+            Gui.Selection.addSelection(doc_name, sk_name, f'Constraint{co.co_idx + 1}')
+            for thing in s1:
+                Gui.Selection.addSelection(doc_name, sk_name, thing)
+
             # sk_name = ed_info[0].Name
             # Gui.Selection.addSelection(doc_name, sk_name, 'Edge1')
-
+            # Gui.Selection.clearSelection()
+            # Gui.Selection.addSelection('Test','Sketch','Constraint7')
 
     @flow
     def cons_update_combo(self, co_list: List[CoEd.Constraint]) -> None:
@@ -727,7 +882,7 @@ class CoEdGui(QWidget):
             co_set.add(ct.value)
         li = list(co_set)
         li.sort()
-        xp('cmb text items', li)
+        xp('cmb text items', li, **_cs)
         self.cons_cmb_box.blockSignals(True)
         self.cons_cmb_box.clear()
         self.cons_cmb_box.addItems(li)
@@ -753,6 +908,44 @@ class CoEdGui(QWidget):
         return table_widget
 
     # -------------------------------------------------------------------------
+
+    @flow
+    def tbl_clear_select(self, shape, pnt):
+
+        from_gui: bool = True
+        if App.Vector(pnt) == App.Vector(0, 0, 0):
+            from_gui = False
+
+        if from_gui:
+            switcher: Dict[int, QTableWidget] = {
+                0: self.cons_tbl_wid,
+                1: self.coin_tbl_wid,
+                2: self.hv_tbl_wid,
+                3: self.rad_tbl_wid,
+                4: self.xy_tbl_wid,
+            }
+            for tbl in switcher.values():
+                tbl.blockSignals(True)
+                tbl.clearSelection()
+                tbl.blockSignals(False)
+
+        if shape.find('Vertex') != -1:
+            no = int(shape[6:])
+            typ = 'Vertex'
+            geo, pos = self.base.sketch.getGeoVertexIndex(no)
+            xp(f'received: gui: {from_gui} {typ} {no} geo: ({geo}.{pos})', **_fl)
+        elif shape.find('Edge') != -1:
+            no = int(shape[4:])
+            typ = 'Edge'
+            xp(f'received: gui: {from_gui} {typ} {no}', **_fl)
+        elif shape.find('Constraint') != -1:
+            no = int(shape[10:])
+            typ = 'Constraint'
+            xp(f'received: gui: {from_gui} {typ} {no}', **_fl)
+        else:
+            xp(f'received ?: gui: {from_gui} {shape} {pnt}', **_fl)
+
+    # Constraint2
 
     @flow
     def __prep_table(self, tbl: QTableWidget):

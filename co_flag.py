@@ -1,20 +1,25 @@
 import functools
 from enum import Flag, auto
-from typing import List
 
 from PySide2.QtCore import QObject, Signal
 
 from co_logger import _fl, xp, xps
-from co_cmn import seq_gen
 
 
-class Event(QObject):
-    # todo code events
+class DataChgEvent(QObject):
     hv_edg_chg = Signal(str)
     xy_edg_chg = Signal(str)
     coin_pts_chg = Signal(str)
     cons_chg = Signal(str)
+    rad_chg = Signal(str)
 
+
+class ObserverEvent(QObject):
+    add_selection = Signal(object, object, object, object)
+    doc_recomputed = Signal(object)
+    obj_recomputed = Signal(object)
+    open_transact = Signal(object, str)
+    commit_transact = Signal(object)
 
 # so = Event()
 # so.cons_chg.connect(say_some_words)
@@ -92,6 +97,16 @@ class Dirty(Flag):
     CONSTRAINTS = auto()
 
 
+class Cs(Flag):
+    F = auto()
+    FP = auto()
+    S = auto()
+    SP = auto()
+    T = auto()
+    TP = auto()
+    V = auto()
+
+
 class Flags:
 
     def __init__(self, cls):
@@ -154,19 +169,50 @@ xps(__name__)
 if __name__ == '__main__':
     # todo clean up test code
 
+    for x, y in Cs.__members__.items():
+        print(x, y)
+    print('-------------------------')
+    cs = Flags(Cs)
+    cs.set(Cs.F | Cs.S)
+    print(cs)
+    print('-------------------------')
+    c1 = Cs.F | Cs.S
+    c2 = Cs.F | Cs.S
+    c3 = Cs.F | Cs.FP
+    print(c1)
+    print(Cs.F in c1)
+    print('-------------------------')
+    print(c1)
+    print(Cs.F in c1)
+    print(Cs.FP in c1)
+    print(Cs.S in c1)
+    print('-------------------------')
+    print((Cs.F in c1) & (Cs.S in c1))
+    print((Cs.F in c1) | (Cs.S in c1))
+    print((Cs.F in c1) & (Cs.FP in c1))
+    print((Cs.F in c1) | (Cs.FP in c1))
+    print('-------------------------')
+    print(c1 in c2)
+    print(c1 == c2)
+    print(c1 in c3)
+    print(c1 == c3)
+    print((Cs.F | Cs.S) in c2)
+    print((Cs.F | Cs.FP) in c2)
+
+
     # for x, y in Dirty.__members__.items():
     #     print(x, y)
 
-    g = seq_gen()
-    print('----------')
-    f = Flags(Dirty)
-    f.all()
+    # g = seq_gen()
+    # print('----------')
+    # f = Flags(Dirty)
+    # f.all()
     # print(next(g), f)
-    f.invert()
+    # f.invert()
     # print(next(g), f)
-    f.set(Dirty.COIN_POINTS)
+    # f.set(Dirty.COIN_POINTS)
     # print(next(g), f)
-    f.set(Dirty.HV_EDGES)
+    # f.set(Dirty.HV_EDGES)
     # print(next(g), f)
     # f.reset(Dirty.COIN_POINTS)
     # # print(next(g), f)

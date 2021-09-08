@@ -205,13 +205,43 @@ def _xpt(*args):
     [XpConf.topics.add(x) for x in args]
 
 
-# import cProfile, pstats
-# profiler = cProfile.Profile()
-# profiler.enable()
-# main()
-# profiler.disable()
-# stats = pstats.Stats(profiler).sort_stats('ncalls')
-# stats.print_stats()
+# ! profiling
+class Profile:
+    def __init__(self, enable: bool = True, top_n: int = 10):
+        # print('__init__ called')
+        self.profiler = None
+        self.top_n: int = top_n
+        self.enable: bool = enable
+
+    def __enter__(self):
+        # print('__enter__ called')
+        import cProfile
+        if self.enable:
+            self.profiler = cProfile.Profile()
+            self.profiler.enable()
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        # print('__exit__ called')
+        if exc_type:
+            xp(f'exc_type: {exc_type}')
+            xp(f'exc_value: {exc_value}')
+            xp(f'exc_traceback: {exc_traceback}')
+        import pstats
+        import io
+        if self.enable:
+            self.profiler.disable()
+            output = io.StringIO()
+            stats = pstats.Stats(self.profiler, stream=output).sort_stats('cumtime')
+            stats.print_stats(self.top_n)
+            # print(output.tell())
+            output.seek(0)
+            # print(output.tell())
+            for line in output:
+                xp(line.rstrip("\n"))
+            # contents = output.getvalue()
+            # print(contents)
+            output.close()
 
 
 def flow(_func=None, *, off=False, short=False):
@@ -270,22 +300,16 @@ GLB_LOG: bool = True
 GLB_HEADER: bool = True
 
 # '': use without kwargs
-_xpt('', 'flow')
+_xpt('', 'observer', 'all')
 
 topics = {
-    'co_g': XpConf('all.coincident.gui', 'cog').k(),
     'co': XpConf('all.coincident.impl', 'co').k(),
-    'cs_g': XpConf('all.constraint.gui', 'csg').k(),
     'cs': XpConf('all.constraint.impl', 'cs').k(),
-    'cf_g': XpConf('all.config.gui', 'cfg').k(),
     'cf': XpConf('all.config.impl', 'cf').k(),
-    'hv_g': XpConf('all.hor_vert.gui', 'hvg').k(),
     'hv': XpConf('all.hor_vert.impl', 'hv').k(),
-    'xy_g': XpConf('all.xy_dist.gui', 'xyg').k(),
     'xy': XpConf('all.xy_dist.impl', 'xy').k(),
-    'rd_g': XpConf('all.radius.gui', 'rdg').k(),
     'rd': XpConf('all.radius.impl', 'rd').k(),
-    'ly_g': XpConf('all.layout.gui', 'lyg').k(),
+    'ly': XpConf('all.layout.gui', 'lyg').k(),
     'fl': XpConf('all.flags', 'fl').k(),
     'pr_edg': XpConf('all.edge', 'eg').k(),
     'co_co': XpConf('all.consider_coin', 'cc').k(),
@@ -298,19 +322,13 @@ topics = {
     'ob_a': XpConf('all.observer.observer_app').k()
 }
 
-_co_g = topics['co_g']
 _co = topics['co']
-_cs_g = topics['cs_g']
 _cs = topics['cs']
-_cf_g = topics['cf_g']
 _cf = topics['cf']
-_hv_g = topics['hv_g']
 _hv = topics['hv']
-_xy_g = topics['xy_g']
 _xy = topics['xy']
-_rd_g = topics['rd_g']
 _rd = topics['rd']
-_ly_g = topics['ly_g']
+_ly = topics['ly']
 _fl = topics['fl']
 
 _prn_edge = topics['pr_edg']

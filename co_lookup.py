@@ -1,117 +1,14 @@
 import threading
-from typing import Dict, NamedTuple, NewType, overload, Tuple
+from typing import NewType, overload, List, Tuple, Set
 
 import FreeCAD as App
-import FreeCADGui as Gui
 import Part
-from Sketcher import Sketch
+from Sketcher import Sketch, Constraint
 
-from co_logger import xp, flow
-from co_cmn import GeoPt, GeoPtn, fmt_vec
+from co_flag import Cs
+from co_cmn import GeoPtn, fmt_vec, pt_typ_int, ConType, ConsTrans, SketchType
 
-
-# class Constraint:
-#
-#     def __init__(self, type_id: str):
-#         self.__type_id = type_id
-#
-#     @property
-#     def type(self):
-#         return self.__type_id
-#
-#
-# class Coincident(Constraint):
-#     class GeoId(NamedTuple):
-#         geo: int = -1
-#         pos: int = -1
-#
-#     def __init__(self, first: GeoId, second: GeoId) -> None:
-#         super(Coincident, self).__init__('Coincident')
-#         self.first: Coincident.GeoId = first
-#         self.second: Coincident.GeoId = second
-#
-#     @property
-#     def first(self):
-#         return self._first
-#
-#     @first.setter
-#     def first(self, value):
-#         self._first = value
-#
-#     @property
-#     def second(self):
-#         return self._second
-#
-#     @second.setter
-#     def second(self, value):
-#         self._second = value
-
-
-# class Geometry:
-#
-#     def __init__(self, type_id: str):
-#         self.__type_id = type_id
-#
-#     @property
-#     def type(self):
-#         return self.__type_id
-#
-#
-# class LineSegment(Geometry):
-#
-#     def __init__(self, start: Vector, end: Vector) -> None:
-#         super(LineSegment, self).__init__('Part::GeomLineSegment')
-#         self.start: Vector = start
-#         self.end: Vector = end
-#
-#     @property
-#     def start(self) -> Vector:
-#         return self.__start
-#
-#     @start.setter
-#     def start(self, value: Vector):
-#         self.__start = value
-#
-#     @property
-#     def end(self) -> Vector:
-#         return self.__end
-#
-#     @end.setter
-#     def end(self, value: Vector):
-#         self.__end = value
-
-
-# class VectorMap(NamedTuple):
-#     geo_idx: int = -1
-#     op_vertex_idx: int = -1
-#     edge_idx: int = -1
-#     vertex_idx: int = -1
-
-
-
-# d: Dict[Vector, VectorMap] = dict()
-#
-# v: VectorMap = VectorMap()
-#
-# v1: Vector = Vector(1, 2, 3)
-# v2: Vector = Vector(4, 5, 6)
-#
-# d[v1] = VectorMap(geo_idx=11)
-# d[v1] = VectorMap(geo_idx=d[v1].geo_idx, op_vertex_idx=22,
-#                   edge_idx=d[v1].edge_idx, vertex_idx=d[v1].vertex_idx)
-# d[v1] = VectorMap(geo_idx=d[v1].geo_idx, op_vertex_idx=d[v1].op_vertex_idx,
-#                   edge_idx=33, vertex_idx=d[v1].vertex_idx)
-# d[v1] = VectorMap(geo_idx=d[v1].geo_idx, op_vertex_idx=d[v1].op_vertex_idx,
-#                   edge_idx=d[v1].edge_idx, vertex_idx=44)
-#
-# d[v2] = VectorMap(geo_idx=111)
-# d[v2] = VectorMap(geo_idx=d[v2].geo_idx, op_vertex_idx=222,
-#                   edge_idx=d[v2].edge_idx, vertex_idx=d[v2].vertex_idx)
-# d[v2] = VectorMap(geo_idx=d[v2].geo_idx, op_vertex_idx=d[v2].op_vertex_idx,
-#                   edge_idx=333, vertex_idx=d[v2].vertex_idx)
-# d[v2] = VectorMap(geo_idx=d[v2].geo_idx, op_vertex_idx=d[v2].op_vertex_idx,
-#                   edge_idx=d[v2].edge_idx, vertex_idx=444)
-
+from co_logger import flow, xps, xp
 
 
 class Lookup:
@@ -126,83 +23,192 @@ class Lookup:
     Idx = NewType('Idx', int)
 
     def __init__(self, obj) -> None:
-        sk: Sketch = obj
-        self.sketch = sk
+        sk: SketchType = obj
+        self.sketch: SketchType = sk
         self.geo = sk.Geometry
-        self.cons = sk.Constraints
+        self.cons: List[Constraint] = sk.Constraints
         self.op_vert = sk.OpenVertices
-        self.Edges = sk.Shape.Edges
-        self.Vertices = sk.Shape.Vertexes
+        self.Edges: List[Part.Edge] = sk.Shape.Edges
+        self.Vertices: List[Part.Vertex] = sk.Shape.Vertexes
 
-    def __new__(cls, *args, **kwargs):
-        # ! singleton
-        if not cls.__instance:
-            with cls.__lock:
-                cls.__instance = super().__new__(cls)
-        else:
-            # ! init once per inst
-            def init_pass(self, *dt, **mp):
-                pass
-            cls.__init__ = init_pass
-        return cls.__instance
-
-    __instance: object = None
-    __lock = threading.Lock()
-
-    @overload
-    def lookup(self, vert: GeoPtn) -> str: ...
+    # def __new__(cls, *args, **kwargs):
+    #     # ! singleton
+    #     if not cls.__instance:
+    #         with cls.__lock:
+    #             cls.__instance = super().__new__(cls)
+    #     else:
+    #         # ! init once per inst
+    #         def init_pass(self, *dt, **mp):
+    #             pass
+    #         cls.__init__ = init_pass
+    #     return cls.__instance
+    #
+    # __instance: object = None
+    # __lock = threading.Lock()
 
     @overload
-    def lookup(self, vert_first: GeoPtn, vert_second: GeoPtn) -> str: ...
+    def lookup(self, vert: GeoPtn) -> Tuple[str, str]: ...
 
     @overload
-    def lookup(self, geo_id: int) -> str: ...
+    def lookup(self, geo_id: int) -> Tuple[Set[str], str]: ...
 
     @overload
-    def lookup(self, geo_id1: int, geo_id2: int) -> str: ...
+    def lookup(self, item: ConsTrans) -> Tuple[Set[str], str]: ...
 
+    @flow(off=True)
     def lookup(self, *args):
-
         if len(args) == 1:
             if isinstance(args[0], int):
                 geo_id: int = args[0]
-                geo_item: Part.LineSegment = self.geo[geo_id]
-                vec1: App.Vector = App.Vector(geo_item.StartPoint)
-                vec2: App.Vector = App.Vector(geo_item.EndPoint)
-                # ? too much assumption ?
-                for idx, edge in enumerate(self.Edges):
-                    if edge.SubShapes[0].Point == vec1 and edge.SubShapes[1].Point == vec2:
-                        return f'Edge{idx + 1} start: {fmt_vec(edge.SubShapes[0].Point)} end: ' \
-                               f'{fmt_vec(edge.SubShapes[1].Point)}'
-                return 'not found'
-            else:
-                pt: GeoPtn = args[0]
-                geo_item: Part.LineSegment = self.geo[pt.geo_id]
-                if pt.type_id == 1:
-                    vec: App.Vector = App.Vector(geo_item.StartPoint)
-                else:
-                    vec: App.Vector = App.Vector(geo_item.EndPoint)
-                for idx, vert in enumerate(self.Vertices):
-                    if vert.Point == vec:
-                        return f'Vertex{idx + 1} point: {fmt_vec(vert.Point)}'
-                return 'not found'
+                if self.geo[geo_id].TypeId == 'Part::GeomLineSegment':
+                    res_set: Set[str] = set()
+                    idx = 0
+                    while True:
+                        geo, pos = self.sketch.getGeoVertexIndex(idx)
+                        if geo == geo_id:
+                            res_set.add(f'Vertex{idx + 1}')
+                        if (geo == -2000) and (pos == 0):
+                            break
+                        idx += 1
+                    line: Part.LineSegment = self.geo[geo_id]
+                    vec1: App.Vector = App.Vector(line.StartPoint)
+                    vec2: App.Vector = App.Vector(line.EndPoint)
+                    res_set.add(f'Edge{geo_id + 1}')
+                    return res_set, f'Edge{geo_id + 1} geo_id: {geo_id} start: {fmt_vec(vec1)} end: {fmt_vec(vec2)}'
+                if self.geo[geo_id].TypeId == 'Part::GeomCircle':
+                    res_set: Set[str] = set()
+                    idx = 0
+                    while True:
+                        geo, pos = self.sketch.getGeoVertexIndex(idx)
+                        if geo == geo_id:
+                            res_set.add(f'Vertex{idx + 1}')
+                        if (geo == -2000) and (pos == 0):
+                            break
+                        idx += 1
+                    cir: Part.Circle = self.geo[geo_id]
+                    res_set.add(f'Edge{geo_id + 1}')
+                    return res_set, f'geo_id: {geo_id} TypeId: {cir.TypeId} Center: {fmt_vec(App.Vector(cir.Center))} Radius: {cir.Radius}'
+                if self.geo[geo_id].TypeId == 'Part::GeomArcOfCircle':
+                    res_set: Set[str] = set()
+                    idx = 0
+                    while True:
+                        geo, pos = self.sketch.getGeoVertexIndex(idx)
+                        if geo == geo_id:
+                            res_set.add(f'Vertex{idx + 1}')
+                        if (geo == -2000) and (pos == 0):
+                            break
+                        idx += 1
+                    arc: Part.ArcOfCircle = self.geo[geo_id]
+                    res_set.add(f'Edge{geo_id + 1}')
+                    return res_set, f'geo_id: {geo_id} TypeId: {arc.TypeId} Center: {fmt_vec(App.Vector(arc.Center))} Radius: {arc.Radius}'
+                if self.geo[geo_id].TypeId == 'Part::GeomPoint':
+                    res_set: Set[str] = set()
+                    idx = 0
+                    while True:
+                        geo, pos = self.sketch.getGeoVertexIndex(idx)
+                        if geo == geo_id:
+                            res_set.add(f'Vertex{idx + 1}')
+                        if (geo == -2000) and (pos == 0):
+                            break
+                        idx += 1
+                    pt: Part.Point = self.geo[geo_id]
+                    return res_set, f'geo_id: {geo_id} TypeId: {pt.TypeId} Item: {pt}'
 
-        elif len(args) == 2:
-            if isinstance(args[0], int):
-                geo_id1: int = args[0]
-                geo_id2: int = args[1]
-                s1: str = self.lookup(geo_id1)
-                s2: str = self.lookup(geo_id2)
-                return s1 + ' ' + s2
+                return f'none', f'{geo_id} {self.geo[geo_id].TypeId}'
+
+            elif isinstance(args[0], GeoPtn):
+                pt: GeoPtn = args[0]
+                # geo_item: Part.LineSegment = self.geo[pt.geo_id]
+                idx = 0
+                while True:
+                    geo, pos = self.sketch.getGeoVertexIndex(idx)
+                    if (geo == pt.geo_id) and (pos == pt.type_id):
+                        return f'Vertex{idx + 1}', f'Vertex{idx + 1} idx: {idx} geo: ({geo}.{pos})'
+                    if (geo == -2000) and (pos == 0):
+                        break
+                    idx += 1
+                return f'not found', f'not found'
+
+            elif isinstance(args[0], ConsTrans):
+                item: ConsTrans = args[0]
+                s: str = ''
+                set_: Set[str] = set()
+                cs: Constraint = self.cons[item.co_idx]
+                if (Cs.F | Cs.FP) in item.sub_type:
+                    s1, s2 = self.lookup(GeoPtn(cs.First, cs.FirstPos))
+                    set_.add(s1)
+                    s += f'{s2} '
+                elif Cs.F in item.sub_type:
+                    s1, s2 = self.lookup(cs.First)
+                    set_ = set_.union(s1)
+                    s += f'{s2} '
+                else:
+                    raise ValueError('no first available')
+
+                if (Cs.S | Cs.SP) in item.sub_type:
+                    s1, s2 = self.lookup(GeoPtn(cs.Second, cs.SecondPos))
+                    set_.add(s1)
+                    s += f'{s2} '
+                elif Cs.S in item.sub_type:
+                    s1, s2 = self.lookup(cs.Second)
+                    set_ = set_.union(s1)
+                    s += f'{s2} '
+
+                if (Cs.T | Cs.TP) in item.sub_type:
+                    s1, s2 = self.lookup(GeoPtn(cs.Third, cs.ThirdPos))
+                    set_.add(s1)
+                    s += f'{s2} '
+                elif Cs.T in item.sub_type:
+                    s1, s2 = self.lookup(cs.Third)
+                    set_ = set_.union(s1)
+                    s += f'{s2} '
+                return set_, s
             else:
-                vert_first: GeoPtn = args[0]
-                vert_second: GeoPtn = args[1]
-                s1: str = self.lookup(vert_first)
-                s2: str = self.lookup(vert_second)
-                return s1 + ' ' + s2
+                raise TypeError(args[0])
+        else:
+            raise TypeError(len(args))
+
 
 
     """
+    
+      | ---Geometry----------------------------------------
+      | idx: 0 type_id: Part::GeomLineSegment start: (4.00, 8.00, 0.00) end: (20.00, 10.00, 0.00)
+      | idx: 1 type_id: Part::GeomPoint item: <Point (17.6509,4.76469,0) >
+      | idx: 2 type_id: Part::GeomArcOfCircle item: ArcOfCircle (Radius : 3, Position : (9, 14, 0), Direction : (0, 0, 1), Parameter : (1.5708, 3.14159))
+      | idx: 3 type_id: Part::GeomCircle center: (16.21, 20.24, 0.00) radius: 1.793571
+      | idx: 4 type_id: Part::GeomLineSegment start: (-7.00, 17.00, 0.00) end: (-9.00, 13.29, 0.00)
+      | idx: 5 type_id: Part::GeomLineSegment start: (-9.00, 13.29, 0.00) end: (-4.38, 13.50, 0.00)
+      | idx: 6 type_id: Part::GeomLineSegment start: (-4.38, 13.50, 0.00) end: (-7.00, 17.00, 0.00)
+      | idx: 7 type_id: Part::GeomArcOfCircle item: ArcOfCircle (Radius : 0.965578, Position : (3, 26.5016, 0), Direction : (0, 0, 1), Parameter : (1.5708, 4.71239))
+      | idx: 8 type_id: Part::GeomArcOfCircle item: ArcOfCircle (Radius : 0.965578, Position : (7.35276, 26.5016, 0), Direction : (0, 0, 1), Parameter : (4.71239, 7.85398))
+      | idx: 9 type_id: Part::GeomLineSegment start: (3.00, 25.54, 0.00) end: (7.35, 25.54, 0.00)
+      | idx: 10 type_id: Part::GeomLineSegment start: (3.00, 27.47, 0.00) end: (7.35, 27.47, 0.00)
+      | ---getGeoVertexIndex----------------------------------------
+      | idx: 0 (0.1)
+      | idx: 1 (0.2)
+      | idx: 2 (1.1)
+      | idx: 3 (2.1)
+      | idx: 4 (2.2)
+      | idx: 5 (2.3)
+      | idx: 6 (3.3)
+      | idx: 7 (4.1)
+      | idx: 8 (4.2)
+      | idx: 9 (5.1)
+      | idx: 10 (5.2)
+      | idx: 11 (6.1)
+      | idx: 12 (6.2)
+      | idx: 13 (7.1)
+      | idx: 14 (7.2)
+      | idx: 15 (7.3)
+      | idx: 16 (8.1)
+      | idx: 17 (8.2)
+      | idx: 18 (8.3)
+      | idx: 19 (9.1)
+      | idx: 20 (9.2)
+      | idx: 21 (10.1)
+      | idx: 22 (10.2)
+    
     | ---obj.TypeId: Sketcher::SketchObject----------------------------------------
     | GeometryWithDependentParameters: [(0, 1), (0, 1), (1, 1), (1, 1), (2, 1), (2, 1), (3, 1), (3, 1), (4, 1)]
     | full_name: Test#Sketch

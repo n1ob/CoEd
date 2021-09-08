@@ -5,7 +5,7 @@ from typing import NamedTuple, Dict, Set
 from PySide2.QtCore import QByteArray, QDataStream, QIODevice
 from PySide2.QtGui import QFont, QColor
 
-from co_logger import xp, xps, flow
+from co_logger import xp, xps, flow, _cf
 
 
 class ClsInfo(NamedTuple):
@@ -14,7 +14,7 @@ class ClsInfo(NamedTuple):
 
 
 def cfg_decorator(cls):
-    xp(cls)
+    xp(cls, **_cf)
     cls._cfg_class = cls
     return cls
 
@@ -36,7 +36,7 @@ class CfgBase:
 
     @data.setter
     def data(self, value):
-        xps('data set', self, value)
+        xps('data set', self, value, **_cf)
         self.__data = value
 
     @staticmethod
@@ -49,7 +49,7 @@ class CfgBase:
         if not cls.__instance:
             with cls.__lock:
                 cls.__instance = super().__new__(cls, *args, **kwargs)
-                xp('new instance', cls.__instance, 'cfg class', hasattr(cls, '_cfg_class'))
+                xp('new instance', cls.__instance, 'cfg class', hasattr(cls, '_cfg_class'), **_cf)
                 # ! otf collect cfg classes
                 if hasattr(cls, '_cfg_class'):
                     CfgBase.__cfg_names[cls] = cls.__instance
@@ -57,12 +57,12 @@ class CfgBase:
 
                     # ! delegates
                     def cfg_get(self) -> dict:
-                        xp('get_del', self, self.__cfg_base)
+                        xp('get_del', self, self.__cfg_base, **_cf)
                         return self.__cfg_base.inst.get(self)
                     cls.load_delegate = cfg_get
 
                     def cfg_set(self, val):
-                        xp('set_del', self, self.__cfg_base, val)
+                        xp('set_del', self, self.__cfg_base, val, **_cf)
                         self.__cfg_base.inst.set(self, val)
                     cls.save_delegate = cfg_set
         else:
@@ -98,7 +98,7 @@ class PersistJson(CfgBase):
             with open('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/coed_config.json', 'r') as file:
                 return json.load(file)
         except FileNotFoundError as err:
-            xp(err)
+            xp(err, **_cf)
             return dict()
         # return json.loads(self.mock)
 
@@ -184,12 +184,12 @@ class CfgFonts(CfgBase):
     def load(self):
         self.data = self.load_delegate()
         for x in self.data.keys():
-            xp('dbg font_get', self.font_get(x))
+            xp('dbg font_get', self.font_get(x), **_cf)
 
     @flow
     def save(self):
         for x in self.data.keys():
-            xp('dbg font_get', self.font_get(x))
+            xp('dbg font_get', self.font_get(x), **_cf)
         self.save_delegate(self.data)
 
     @flow
@@ -309,15 +309,32 @@ class CfgColors(CfgBase):
     __material_orange = '#e65100'  # orange
     __material_deep_orange = '#bf360c'  # deep orange
 
-    # defaults
-    __co_xml_elem_def = __material_green  # green
-    __co_xml_attr_def = __material_indigo  # indigo
-    __co_xml_val_def = __material_light_green  # light green
-    __co_xml_ln_cmt_def = __material_cyan  # cyan
-    __co_xml_txt_def = __material_teal  # teal
-    __co_xml_keyword_def = __material_light_blue  # light blue
+    __light_green_darker = '#34FEBB'
+    __light_blue = '#88B4E7'
+    __darker_blue_gray = '#586F89'
+    __light_green = '#8CD0D3'
+    __very_light_blue = '#D6E9FF'
+    __green = '#32AE85'
 
-    __names: Dict[str, str] = {COLOR_XML_ELEM: __co_xml_elem_def, COLOR_XML_ATTR: __co_xml_attr_def, 
+    # defaults
+    __co_xml_elem_def = __very_light_blue  # green
+    __co_xml_attr_def = __light_blue  # indigo
+    __co_xml_val_def = __green  # light green
+    __co_xml_ln_cmt_def = __darker_blue_gray  # cyan
+    __co_xml_txt_def = __light_green  # teal
+    __co_xml_keyword_def = __light_green_darker  # light blue
+
+
+    '''
+    52/254/187 light green / string
+    136/180/231 light blue/ default, attribute
+    88/111/137 darker blue gray / comment
+    140/208/211 light green / numbers
+    214/233/255 very light blue / tag
+    50/174/133 green / entity
+    '''
+
+    __names: Dict[str, str] = {COLOR_XML_ELEM: __co_xml_elem_def, COLOR_XML_ATTR: __co_xml_attr_def,
                                COLOR_XML_VAL: __co_xml_val_def, COLOR_XML_LN_CMT: __co_xml_ln_cmt_def, 
                                COLOR_XML_TXT: __co_xml_txt_def, COLOR_XML_KEYWORD: __co_xml_keyword_def}
 
