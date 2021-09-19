@@ -47,13 +47,16 @@ class Lookup:
     # __lock = threading.Lock()
 
     @overload
-    def lookup(self, vert: GeoPtn) -> Tuple[str, str]: ...
+    def lookup(self, vert: GeoPtn) -> Tuple[str, str]:
+        ...
 
     @overload
-    def lookup(self, geo_id: int) -> Tuple[Set[str], str]: ...
+    def lookup(self, geo_id: int) -> Tuple[Set[str], str]:
+        ...
 
     @overload
-    def lookup(self, item: ConsTrans) -> Tuple[Set[str], str]: ...
+    def lookup(self, item: ConsTrans) -> Tuple[Set[str], str]:
+        ...
 
     @flow(off=True)
     def lookup(self, *args):
@@ -169,86 +172,87 @@ class Lookup:
             raise TypeError(len(args))
 
 
+xps(__name__)
 
-    """
-    
-      | ---Geometry----------------------------------------
-      | idx: 0 type_id: Part::GeomLineSegment start: (4.00, 8.00, 0.00) end: (20.00, 10.00, 0.00)
-      | idx: 1 type_id: Part::GeomPoint item: <Point (17.6509,4.76469,0) >
-      | idx: 2 type_id: Part::GeomArcOfCircle item: ArcOfCircle (Radius : 3, Position : (9, 14, 0), Direction : (0, 0, 1), Parameter : (1.5708, 3.14159))
-      | idx: 3 type_id: Part::GeomCircle center: (16.21, 20.24, 0.00) radius: 1.793571
-      | idx: 4 type_id: Part::GeomLineSegment start: (-7.00, 17.00, 0.00) end: (-9.00, 13.29, 0.00)
-      | idx: 5 type_id: Part::GeomLineSegment start: (-9.00, 13.29, 0.00) end: (-4.38, 13.50, 0.00)
-      | idx: 6 type_id: Part::GeomLineSegment start: (-4.38, 13.50, 0.00) end: (-7.00, 17.00, 0.00)
-      | idx: 7 type_id: Part::GeomArcOfCircle item: ArcOfCircle (Radius : 0.965578, Position : (3, 26.5016, 0), Direction : (0, 0, 1), Parameter : (1.5708, 4.71239))
-      | idx: 8 type_id: Part::GeomArcOfCircle item: ArcOfCircle (Radius : 0.965578, Position : (7.35276, 26.5016, 0), Direction : (0, 0, 1), Parameter : (4.71239, 7.85398))
-      | idx: 9 type_id: Part::GeomLineSegment start: (3.00, 25.54, 0.00) end: (7.35, 25.54, 0.00)
-      | idx: 10 type_id: Part::GeomLineSegment start: (3.00, 27.47, 0.00) end: (7.35, 27.47, 0.00)
-      | ---getGeoVertexIndex----------------------------------------
-      | idx: 0 (0.1)
-      | idx: 1 (0.2)
-      | idx: 2 (1.1)
-      | idx: 3 (2.1)
-      | idx: 4 (2.2)
-      | idx: 5 (2.3)
-      | idx: 6 (3.3)
-      | idx: 7 (4.1)
-      | idx: 8 (4.2)
-      | idx: 9 (5.1)
-      | idx: 10 (5.2)
-      | idx: 11 (6.1)
-      | idx: 12 (6.2)
-      | idx: 13 (7.1)
-      | idx: 14 (7.2)
-      | idx: 15 (7.3)
-      | idx: 16 (8.1)
-      | idx: 17 (8.2)
-      | idx: 18 (8.3)
-      | idx: 19 (9.1)
-      | idx: 20 (9.2)
-      | idx: 21 (10.1)
-      | idx: 22 (10.2)
-    
-    | ---obj.TypeId: Sketcher::SketchObject----------------------------------------
-    | GeometryWithDependentParameters: [(0, 1), (0, 1), (1, 1), (1, 1), (2, 1), (2, 1), (3, 1), (3, 1), (4, 1)]
-    | full_name: Test#Sketch
-    | ---Geometry----------------------------------------
-    | idx: 0 type_id: Part::GeomLineSegment start_end: Vector (-8.0, -5.0, 0.0) Vector (4.0, 8.0, 0.0)
-    | idx: 1 type_id: Part::GeomLineSegment start_end: Vector (4.0, 8.0, 0.0) Vector (7.0, -8.0, 0.0)
-    | idx: 2 type_id: Part::GeomLineSegment start_end: Vector (-8.0, -6.0, 0.0) Vector (7.0, -9.0, 0.0)
-    | idx: 3 type_id: Part::GeomLineSegment start_end: Vector (4.0, 8.0, 0.0) Vector (20.0, 10.0, 0.0)
-    | idx: 4 type_id: Part::GeomPoint item: <Point (16,-5,0) >
-    | ---Constraints----------------------------------------
-    | idx: 0 type_id: Sketcher::Constraint item: <Constraint 'Coincident'>
-    | (3.1) (0.2)
-    | idx: 1 type_id: Sketcher::Constraint item: <Constraint 'Coincident'>
-    | (0.2) (1.1)
-    | ---OpenVertices----------------------------------------
-    | idx: 0 item: (-8.0, -5.0, 0.0)
-    | idx: 1 item: (4.0, 8.0, 0.0)
-    | idx: 2 item: (20.0, 10.0, 0.0)
-    | idx: 3 item: (7.0, -8.0, 0.0)
-    | idx: 4 item: (-8.0, -6.0, 0.0)
-    | idx: 5 item: (7.0, -9.0, 0.0)
-    | ---Shape.Edges----------------------------------------
-    | idx 0 type_id Edge
-    |    idx: 0 geo ( 0 , 1 ) ShapeType: Vertex Point: Vector (-8.0, -5.0, 0.0)
-    |    idx: 1 geo ( 0 , 2 ) ShapeType: Vertex Point: Vector (4.0, 8.0, 0.0)
-    | idx 1 type_id Edge
-    |    idx: 0 geo ( 0 , 1 ) ShapeType: Vertex Point: Vector (4.0, 8.0, 0.0)
-    |    idx: 1 geo ( 0 , 2 ) ShapeType: Vertex Point: Vector (20.0, 10.0, 0.0)
-    | idx 2 type_id Edge
-    |    idx: 0 geo ( 0 , 1 ) ShapeType: Vertex Point: Vector (4.0, 8.0, 0.0)
-    |    idx: 1 geo ( 0 , 2 ) ShapeType: Vertex Point: Vector (7.0, -8.0, 0.0)
-    | idx 3 type_id Edge
-    |    idx: 0 geo ( 0 , 1 ) ShapeType: Vertex Point: Vector (-8.0, -6.0, 0.0)
-    |    idx: 1 geo ( 0 , 2 ) ShapeType: Vertex Point: Vector (7.0, -9.0, 0.0)
-    | ---Shape.Vertexes----------------------------------------
-    | idx: 0 geo ( 0 , 1 ) ShapeType: Vertex Point: Vector (-8.0, -5.0, 0.0)
-    | idx: 1 geo ( 0 , 2 ) ShapeType: Vertex Point: Vector (4.0, 8.0, 0.0)
-    | idx: 2 geo ( 1 , 1 ) ShapeType: Vertex Point: Vector (20.0, 10.0, 0.0)
-    | idx: 3 geo ( 1 , 2 ) ShapeType: Vertex Point: Vector (7.0, -8.0, 0.0)
-    | idx: 4 geo ( 2 , 1 ) ShapeType: Vertex Point: Vector (-8.0, -6.0, 0.0)
-    | idx: 5 geo ( 2 , 2 ) ShapeType: Vertex Point: Vector (7.0, -9.0, 0.0)
-    | -------------------------------------------
-    """
+"""
+
+  | ---Geometry----------------------------------------
+  | idx: 0 type_id: Part::GeomLineSegment start: (4.00, 8.00, 0.00) end: (20.00, 10.00, 0.00)
+  | idx: 1 type_id: Part::GeomPoint item: <Point (17.6509,4.76469,0) >
+  | idx: 2 type_id: Part::GeomArcOfCircle item: ArcOfCircle (Radius : 3, Position : (9, 14, 0), Direction : (0, 0, 1), Parameter : (1.5708, 3.14159))
+  | idx: 3 type_id: Part::GeomCircle center: (16.21, 20.24, 0.00) radius: 1.793571
+  | idx: 4 type_id: Part::GeomLineSegment start: (-7.00, 17.00, 0.00) end: (-9.00, 13.29, 0.00)
+  | idx: 5 type_id: Part::GeomLineSegment start: (-9.00, 13.29, 0.00) end: (-4.38, 13.50, 0.00)
+  | idx: 6 type_id: Part::GeomLineSegment start: (-4.38, 13.50, 0.00) end: (-7.00, 17.00, 0.00)
+  | idx: 7 type_id: Part::GeomArcOfCircle item: ArcOfCircle (Radius : 0.965578, Position : (3, 26.5016, 0), Direction : (0, 0, 1), Parameter : (1.5708, 4.71239))
+  | idx: 8 type_id: Part::GeomArcOfCircle item: ArcOfCircle (Radius : 0.965578, Position : (7.35276, 26.5016, 0), Direction : (0, 0, 1), Parameter : (4.71239, 7.85398))
+  | idx: 9 type_id: Part::GeomLineSegment start: (3.00, 25.54, 0.00) end: (7.35, 25.54, 0.00)
+  | idx: 10 type_id: Part::GeomLineSegment start: (3.00, 27.47, 0.00) end: (7.35, 27.47, 0.00)
+  | ---getGeoVertexIndex----------------------------------------
+  | idx: 0 (0.1)
+  | idx: 1 (0.2)
+  | idx: 2 (1.1)
+  | idx: 3 (2.1)
+  | idx: 4 (2.2)
+  | idx: 5 (2.3)
+  | idx: 6 (3.3)
+  | idx: 7 (4.1)
+  | idx: 8 (4.2)
+  | idx: 9 (5.1)
+  | idx: 10 (5.2)
+  | idx: 11 (6.1)
+  | idx: 12 (6.2)
+  | idx: 13 (7.1)
+  | idx: 14 (7.2)
+  | idx: 15 (7.3)
+  | idx: 16 (8.1)
+  | idx: 17 (8.2)
+  | idx: 18 (8.3)
+  | idx: 19 (9.1)
+  | idx: 20 (9.2)
+  | idx: 21 (10.1)
+  | idx: 22 (10.2)
+
+| ---obj.TypeId: Sketcher::SketchObject----------------------------------------
+| GeometryWithDependentParameters: [(0, 1), (0, 1), (1, 1), (1, 1), (2, 1), (2, 1), (3, 1), (3, 1), (4, 1)]
+| full_name: Test#Sketch
+| ---Geometry----------------------------------------
+| idx: 0 type_id: Part::GeomLineSegment start_end: Vector (-8.0, -5.0, 0.0) Vector (4.0, 8.0, 0.0)
+| idx: 1 type_id: Part::GeomLineSegment start_end: Vector (4.0, 8.0, 0.0) Vector (7.0, -8.0, 0.0)
+| idx: 2 type_id: Part::GeomLineSegment start_end: Vector (-8.0, -6.0, 0.0) Vector (7.0, -9.0, 0.0)
+| idx: 3 type_id: Part::GeomLineSegment start_end: Vector (4.0, 8.0, 0.0) Vector (20.0, 10.0, 0.0)
+| idx: 4 type_id: Part::GeomPoint item: <Point (16,-5,0) >
+| ---Constraints----------------------------------------
+| idx: 0 type_id: Sketcher::Constraint item: <Constraint 'Coincident'>
+| (3.1) (0.2)
+| idx: 1 type_id: Sketcher::Constraint item: <Constraint 'Coincident'>
+| (0.2) (1.1)
+| ---OpenVertices----------------------------------------
+| idx: 0 item: (-8.0, -5.0, 0.0)
+| idx: 1 item: (4.0, 8.0, 0.0)
+| idx: 2 item: (20.0, 10.0, 0.0)
+| idx: 3 item: (7.0, -8.0, 0.0)
+| idx: 4 item: (-8.0, -6.0, 0.0)
+| idx: 5 item: (7.0, -9.0, 0.0)
+| ---Shape.Edges----------------------------------------
+| idx 0 type_id Edge
+|    idx: 0 geo ( 0 , 1 ) ShapeType: Vertex Point: Vector (-8.0, -5.0, 0.0)
+|    idx: 1 geo ( 0 , 2 ) ShapeType: Vertex Point: Vector (4.0, 8.0, 0.0)
+| idx 1 type_id Edge
+|    idx: 0 geo ( 0 , 1 ) ShapeType: Vertex Point: Vector (4.0, 8.0, 0.0)
+|    idx: 1 geo ( 0 , 2 ) ShapeType: Vertex Point: Vector (20.0, 10.0, 0.0)
+| idx 2 type_id Edge
+|    idx: 0 geo ( 0 , 1 ) ShapeType: Vertex Point: Vector (4.0, 8.0, 0.0)
+|    idx: 1 geo ( 0 , 2 ) ShapeType: Vertex Point: Vector (7.0, -8.0, 0.0)
+| idx 3 type_id Edge
+|    idx: 0 geo ( 0 , 1 ) ShapeType: Vertex Point: Vector (-8.0, -6.0, 0.0)
+|    idx: 1 geo ( 0 , 2 ) ShapeType: Vertex Point: Vector (7.0, -9.0, 0.0)
+| ---Shape.Vertexes----------------------------------------
+| idx: 0 geo ( 0 , 1 ) ShapeType: Vertex Point: Vector (-8.0, -5.0, 0.0)
+| idx: 1 geo ( 0 , 2 ) ShapeType: Vertex Point: Vector (4.0, 8.0, 0.0)
+| idx: 2 geo ( 1 , 1 ) ShapeType: Vertex Point: Vector (20.0, 10.0, 0.0)
+| idx: 3 geo ( 1 , 2 ) ShapeType: Vertex Point: Vector (7.0, -8.0, 0.0)
+| idx: 4 geo ( 2 , 1 ) ShapeType: Vertex Point: Vector (-8.0, -6.0, 0.0)
+| idx: 5 geo ( 2 , 2 ) ShapeType: Vertex Point: Vector (7.0, -9.0, 0.0)
+| -------------------------------------------
+"""

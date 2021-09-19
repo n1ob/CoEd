@@ -16,7 +16,7 @@ except AttributeError:
 
 class ConsTrans(NamedTuple):
     co_idx: int
-    type_id: str
+    type_id: int
     sub_type: Cs
     fmt: str
 
@@ -31,6 +31,7 @@ class ConsTrans(NamedTuple):
 #                 start   = 1,
 #                 end     = 2,
 #                 mid     = 3 };
+
 
 pt_typ_str = {0: 'n', 1: 's', 2: 'e', 3: 'm'}
 pt_typ_int = {y: x for x, y in pt_typ_str.items()}
@@ -67,7 +68,7 @@ class ConType(Enum):
 
 class GeoPt(NamedTuple):
     geo_id: int
-    type_id: str
+    type_id: int
 
     def __str__(self):
         return "GeoId {}.{}".format(self.geo_id, self.type_id)
@@ -151,4 +152,4 @@ if __name__ == '__main__':
     # if idx < 5:
     #     cur_tbl = switcher.get(idx)
     #     for row in range(cur_tbl.rowCount()):
-    #         co: CoEd.Constraint = cur_tbl.item(row, 2)
+    #         co: co_cs.Constraint = cur_tbl.item(row, 2)

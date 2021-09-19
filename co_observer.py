@@ -37,7 +37,7 @@ def log_some_stuff(obj, prop):
 
 
 class EventProvider:
-    ev = ObserverEvent()
+    evo = ObserverEvent()
 
 
 class AppDocumentObserver(object):
@@ -58,7 +58,7 @@ class AppDocumentObserver(object):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotRecomputedDocument', doc, **_ob_a)
         doc: App.Document
         xp('TypeId', doc.TypeId, **_ob_a)
-        EventProvider.ev.doc_recomputed.emit(doc)
+        EventProvider.evo.doc_recomputed.emit(doc)
 
     # |35 AppDocumentObserver slotRecomputedDocument <Document object at 0000024EF043D020>
 
@@ -73,10 +73,10 @@ class AppDocumentObserver(object):
         xp('TypeId', doc.TypeId, **_ob_a)
         if doc.TypeId == 'App::Document':
             doc: App.Document
-            xp(f'Objects {doc.Objects}')
-            xp(f'ActiveObject {doc.ActiveObject}')
+            xp(f'Objects {doc.Objects}', **_ob_a)
+            xp(f'ActiveObject {doc.ActiveObject}', **_ob_a)
             if doc.ActiveObject.TypeId == 'Sketcher::SketchObject':
-                EventProvider.ev.open_transact.emit(doc, name)
+                EventProvider.evo.open_transact.emit(doc, name)
 
 
     # | ActiveObject <Sketcher::SketchObject>
@@ -92,7 +92,7 @@ class AppDocumentObserver(object):
     def slotCommitTransaction(self, doc):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotCommitTransaction', doc, **_ob_a)
         doc: App.Document
-        xp(doc.TypeId)
+        xp(doc.TypeId, **_ob_a)
 
     # |21 AppDocumentObserver slotCommitTransaction <Document object at 0000024EF043D020>
     # |36 AppDocumentObserver slotCommitTransaction <Document object at 0000024EF043D020>
@@ -127,7 +127,7 @@ class AppDocumentObserver(object):
                 xp('own source', obj.getPropertyByName('coed'), **_ob_a)
                 obj.removeProperty('coed')
             else:
-                EventProvider.ev.obj_recomputed.emit(obj)
+                EventProvider.evo.obj_recomputed.emit(obj)
 
     # |34 AppDocumentObserver slotRecomputedObject <Sketcher::SketchObject>
 
@@ -216,7 +216,7 @@ class SelectionObserver:
             for sub_obj in sel_ex.SubObjects:
                 xp('    sub_obj', repr(sub_obj), **_ob_s)
 
-        EventProvider.ev.add_selection.emit(doc, obj, sub, pnt)
+        EventProvider.evo.add_selection.emit(doc, obj, sub, pnt)
 
     @flow
     def removeSelection(self, doc, obj, sub):
@@ -300,3 +300,6 @@ def unregister():
     unregister_selection_observer()
     # unregister_gui_document_observer()
     unregister_app_document_observer()
+
+
+xps(__name__)

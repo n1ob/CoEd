@@ -10,6 +10,7 @@ class XMLHighlighter(QSyntaxHighlighter):
     """
     Class for highlighting xml text inherited from QSyntaxHighlighter
     """
+
     # noinspection PyArgumentList
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -208,7 +209,6 @@ def set_palette(wid):
     # palette.setColor(QPalette.Inactive, QPalette.ButtonText, QColor())
     # palette.setColor(QPalette.Inactive, QPalette.BrightText, QColor())
     wid.setPalette(palette)
-
 
 
 xps(__name__)

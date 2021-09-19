@@ -300,7 +300,7 @@ GLB_LOG: bool = True
 GLB_HEADER: bool = True
 
 # '': use without kwargs
-_xpt('', 'observer', 'all')
+_xpt('', 'all')
 
 topics = {
     'co': XpConf('all.coincident.impl', 'co').k(),
@@ -309,17 +309,19 @@ topics = {
     'hv': XpConf('all.hor_vert.impl', 'hv').k(),
     'xy': XpConf('all.xy_dist.impl', 'xy').k(),
     'rd': XpConf('all.radius.impl', 'rd').k(),
-    'ly': XpConf('all.layout.gui', 'lyg').k(),
+    'ly': XpConf('all.layout.gui', 'ly').k(),
     'fl': XpConf('all.flags', 'fl').k(),
+    'eq': XpConf('all.equal', 'eq').k(),
+    'ev': XpConf('all.event', 'ev').k(),
     'pr_edg': XpConf('all.edge', 'eg').k(),
     'co_co': XpConf('all.consider_coin', 'cc').k(),
     'co_bld': XpConf('all.co_build', 'cb').k(),
     'cir': XpConf('all.circle', 'cr').k(),
     'geo': XpConf('all.geo_list', 'ge').k(),
     'flo': XpConf('all.flow').k(),
-    'ob_s': XpConf('all.observer.observer_sel').k(),
-    'ob_g': XpConf('all.observer.observer_gui').k(),
-    'ob_a': XpConf('all.observer.observer_app').k()
+    'ob_s': XpConf('all.observer.observer_sel', 'ob').k(),
+    'ob_g': XpConf('all.observer.observer_gui', 'ob').k(),
+    'ob_a': XpConf('all.observer.observer_app', 'ob').k()
 }
 
 _co = topics['co']
@@ -330,6 +332,8 @@ _xy = topics['xy']
 _rd = topics['rd']
 _ly = topics['ly']
 _fl = topics['fl']
+_eq = topics['eq']
+_ev = topics['ev']
 
 _prn_edge = topics['pr_edg']
 _co_co = topics['co_co']

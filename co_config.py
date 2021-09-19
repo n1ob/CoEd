@@ -341,7 +341,6 @@ class CfgColors(CfgBase):
     xps(__qualname__)
 
 
-
 xps(__name__)
 if __name__ == '__main__':
 

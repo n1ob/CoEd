@@ -12,6 +12,7 @@ class DataChgEvent(QObject):
     coin_pts_chg = Signal(str)
     cons_chg = Signal(str)
     rad_chg = Signal(str)
+    eq_chg = Signal(str)
 
 
 class ObserverEvent(QObject):
@@ -95,6 +96,8 @@ class Dirty(Flag):
     XY_EDGES = auto()
     COIN_POINTS = auto()
     CONSTRAINTS = auto()
+    EQ_EDGES = auto()
+    RD_CIRCLES = auto()
 
 
 class Cs(Flag):
