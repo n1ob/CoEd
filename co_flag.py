@@ -6,21 +6,21 @@ from PySide2.QtCore import QObject, Signal
 from co_logger import _fl, xp, xps
 
 
-class DataChgEvent(QObject):
-    hv_edg_chg = Signal(str)
-    xy_edg_chg = Signal(str)
-    coin_pts_chg = Signal(str)
-    cons_chg = Signal(str)
-    rad_chg = Signal(str)
-    eq_chg = Signal(str)
+# class DataChgEvent(QObject):
+#     hv_edg_chg = Signal(str)
+#     xy_edg_chg = Signal(str)
+#     coin_pts_chg = Signal(str)
+#     cons_chg = Signal(str)
+#     rad_chg = Signal(str)
+#     eq_chg = Signal(str)
 
 
-class ObserverEvent(QObject):
-    add_selection = Signal(object, object, object, object)
-    doc_recomputed = Signal(object)
-    obj_recomputed = Signal(object)
-    open_transact = Signal(object, str)
-    commit_transact = Signal(object)
+# class ObserverEvent(QObject):
+#     add_selection = Signal(object, object, object, object)
+#     doc_recomputed = Signal(object)
+#     obj_recomputed = Signal(object)
+#     open_transact = Signal(object, str)
+#     commit_transact = Signal(object)
 
 # so = Event()
 # so.cons_chg.connect(say_some_words)
@@ -93,6 +93,7 @@ class FlagOps(Flag):
 class Dirty(Flag):
     NONE = 0
     HV_EDGES = auto()
+    PA_EDGES = auto()
     XY_EDGES = auto()
     COIN_POINTS = auto()
     CONSTRAINTS = auto()

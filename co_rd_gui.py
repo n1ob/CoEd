@@ -2,7 +2,7 @@ from typing import List
 
 from PySide2.QtCore import Slot, QItemSelectionModel, QModelIndex, Qt
 from PySide2.QtWidgets import QBoxLayout, QWidget, QGroupBox, QCheckBox, QDoubleSpinBox, QPushButton, QTableWidget, \
-    QVBoxLayout, QHBoxLayout, QTableWidgetItem
+    QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -11,6 +11,7 @@ import co_gui
 import co_impl
 from co_cmn import fmt_vec
 from co_logger import flow, xp, _rd, _ev, xps
+from co_observer import observer_event_provider_get
 from co_rd import RdCircles, RdCircle
 
 _QL = QBoxLayout
@@ -23,8 +24,12 @@ class RdGui:
         self.impl: co_impl.CoEd = self.base.base
         self.rd: RdCircles = self.impl.rd_circles
         self.tab_rd = QWidget(None)
-        xp('impl.ev.rad_chg.connect(self.on_rd_chg)', **_ev)
-        self.impl.ev.rad_chg.connect(self.on_rd_chg)
+        # xp('impl.ev.rad_chg.connect(self.on_rd_chg)', **_ev)
+        # self.impl.ev.rad_chg.connect(self.on_rd_chg)
+        xp('rd.created.connect', **_ev)
+        self.rd.created.connect(self.on_rd_create)
+        xp('rd.creation_done.connect', **_ev)
+        self.rd.creation_done.connect(self.on_rd_create_done)
 
         self.rad_grp_box: QGroupBox = QGroupBox(None)
         self.rad_chk_box: QCheckBox = QCheckBox()
@@ -53,10 +58,20 @@ class RdGui:
                self.rad_tbl_wid]]
         return self.base.lay_get(li)
 
+    # @flow
+    # @Slot(str)
+    # def on_rd_chg(self, words):
+    #     xp('rad changed', words, **_ev)
+
     @flow
-    @Slot(str)
-    def on_rd_chg(self, words):
-        xp('rad changed', words, **_ev)
+    @Slot(int, float)
+    def on_rd_create(self, geo: int, rad: float):
+        xp('rad created', geo, rad, **_ev)
+
+    @flow
+    @Slot()
+    def on_rd_create_done(self):
+        xp('rad creation done', **_ev)
 
     @flow
     def on_rd_create_btn_clk(self):
@@ -104,6 +119,9 @@ class RdGui:
 
     @flow
     def update_table(self):
+        self.rad_tbl_wid.setUpdatesEnabled(False)
+        # self.rad_tbl_wid.setEnabled(False)
+        # self.rad_tbl_wid.clearContents()
         self.rad_tbl_wid.setRowCount(0)
         __sorting_enabled = self.rad_tbl_wid.isSortingEnabled()
         self.rad_tbl_wid.setSortingEnabled(False)
@@ -112,16 +130,22 @@ class RdGui:
         xp('->', cir_list, **_rd)
         for item in cir_list:
             cs = f'---'
+            typ = 'cir' if item.type_id == 'Part::GeomCircle' else 'arc'
+            # typ2 = ('arc', 'cir')[item.type_id == 'Part::GeomCircle']
             if item.geo_idx in rad_lst:
+                if self.base.cfg_blubber:
+                    continue
                 xp('rad cs', item.geo_idx, **_rd)
                 cs = f'rad'
             if item.geo_idx in dia_lst:
+                if self.base.cfg_blubber:
+                    continue
                 xp('dia cs', item.geo_idx, **_rd)
                 cs = f'dia'
             self.rad_tbl_wid.insertRow(0)
             fmt = f"{fmt_vec(item.center)}"
             self.rad_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
-            fmt2 = "Id {} r {:.2f} cs {}".format(item.geo_idx, item.radius, cs)
+            fmt2 = f"Id {item.geo_idx} r {item.radius:.1f}\n cs {cs} {typ}"
             w_item = QTableWidgetItem(fmt2)
             w_item.setTextAlignment(Qt.AlignCenter)
             self.rad_tbl_wid.setItem(0, 1, w_item)
@@ -130,6 +154,11 @@ class RdGui:
             xp('col 3', item.geo_idx, **_rd)
             self.rad_tbl_wid.setItem(0, 2, w_item)
         self.rad_tbl_wid.setSortingEnabled(__sorting_enabled)
+        hh: QHeaderView = self.rad_tbl_wid.horizontalHeader()
+        hh.resizeSections(QHeaderView.ResizeToContents)
+        # vh: QHeaderView = self.cons_tbl_wid.verticalHeader()
+        # self.rad_tbl_wid.setEnabled(True)
+        self.rad_tbl_wid.setUpdatesEnabled(True)
 
     @flow
     def selected(self):
@@ -142,7 +171,9 @@ class RdGui:
             self.rad_btn_create.setDisabled(False)
 
         doc_name = App.activeDocument().Name
+        observer_event_provider_get().blockSignals(True)
         Gui.Selection.clearSelection(doc_name, True)
+        observer_event_provider_get().blockSignals(False)
         ed_info = Gui.ActiveDocument.InEditInfo
         sk_name = ed_info[0].Name
 

@@ -1,3 +1,5 @@
+from operator import attrgetter
+
 import FreeCAD as App
 from typing import List, NamedTuple, Tuple, Set
 
@@ -5,6 +7,8 @@ import Sketcher
 import Part
 
 # geo_lst = [()]
+from PySide2.QtCore import Signal, QObject
+
 import co_cs
 import co_impl
 from co_cmn import ConType, pt_typ_int
@@ -13,11 +17,11 @@ from co_logger import flow, xp, xps, _co, _ev
 
 
 class GeoId(NamedTuple):
-    geo_idx: int
-    type_id: int
+    idx: int
+    typ: int
 
     def __str__(self) -> str:
-        return f'({self.geo_idx}.{self.type_id})'
+        return f'({self.idx}.{self.typ})'
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -52,6 +56,8 @@ class CoPoint:
         for x in self.pt_distance_lst:
             if x.distance <= tol:
                 res.append(x)
+            else:
+                break
         return res
 
     @flow
@@ -109,9 +115,14 @@ class CoPoint:
                     xp(f'disjoint x: {x} {cn[x]} y: {y} {cn[y]}', **_co)
 
 
-class CoPoints:
+class CoPoints(QObject):
+
+    created = Signal(tuple, tuple)
+    creation_done = Signal()
+
     def __init__(self, base) -> None:
         self.__init = False
+        super(CoPoints, self).__init__()
         self.__tol_init = False
         self.__dist_init = False
         self.base: co_impl.CoEd = base
@@ -181,7 +192,7 @@ class CoPoints:
                 pt_x: CoPoint = pt_lst[x]
                 if x < y:
                     dist = self._distance_lst[x].pt_distance_lst[y - 1].distance
-                    i = GeoId(pt_x.geo_id.geo_idx, pt_x.geo_id.type_id)
+                    i = GeoId(pt_x.geo_id.idx, pt_x.geo_id.typ)
                     n = GeoIdDist(i, dist)
                     pt_y.pt_distance_lst.append(n)
                 else:
@@ -190,20 +201,23 @@ class CoPoints:
                     g_dist = GeoIdDist(pt_x.geo_id, dist)
                     pt_y.pt_distance_lst.append(g_dist)
             self._distance_lst.append(pt_y)
+        for pt in self._distance_lst:
+            pt.pt_distance_lst.sort(key=attrgetter('distance'))
         self.log_diff()
 
     @flow
     def tolerances_create(self) -> None:
         self._tolerance_lst.clear()
         for item in self.distances:
-            a = CoPoint(GeoId(item.geo_id.geo_idx, item.geo_id.type_id), item.point)
+            a = CoPoint(GeoId(item.geo_id.idx, item.geo_id.typ), item.point)
             a.pt_distance_lst = item.distances_get(self.tolerance)
             self._tolerance_lst.append(a)
         self.log_tol()
 
     @flow
     def cons_get(self) -> Set[Tuple[GeoId, GeoId]]:
-        co_list: List[co_cs.Constraint] = self.base.constraints_get_list()
+        co_list: List[co_cs.Constraint] = self.base.cs.constraints
+        # co_list: List[co_cs.Constraint] = self.base.constraints_get_list()
         col: Set[Tuple[GeoId, GeoId]] = {
             (GeoId(x.first, x.first_pos), GeoId(x.second, x.second_pos))
             for x in co_list
@@ -216,15 +230,22 @@ class CoPoints:
         xp('pt_idx_list', co_pt_list, **_co)
         if len(co_pt_list) == 0:
             return
+        s: Set[Tuple[GeoId, GeoId]] = set()
         for pt in co_pt_list:
             xp('pt', pt.pt_distance_lst, **_co)
             for dist in pt.pt_distance_lst:
                 xp('Coincident', pt.geo_id, dist.geo_id, **_co)
-                con = Sketcher.Constraint('Coincident', pt.geo_id.geo_idx, pt.geo_id.type_id, dist.geo_id.geo_idx,
-                                          dist.geo_id.type_id)
+                if (dist.geo_id, pt.geo_id) in s:
+                    xp('skip redundant', dist.geo_id, pt.geo_id, **_co)
+                    continue
+                s.add((pt.geo_id, dist.geo_id))
+                con = Sketcher.Constraint('Coincident', pt.geo_id.idx, pt.geo_id.typ, dist.geo_id.idx,
+                                          dist.geo_id.typ)
                 doc.openTransaction('coed: Coincident constraint')
                 self.base.sketch.addConstraint(con)
                 doc.commitTransaction()
+                xp('created.emit', pt.geo_id, dist.geo_id, **_ev)
+                self.created.emit((pt.geo_id.idx, pt.geo_id.typ), (dist.geo_id.idx, dist.geo_id.typ))
         self.base.flags.all()
         sk: Sketcher.SketchObject = self.base.sketch
         sk.addProperty('App::PropertyString', 'coed')
@@ -232,8 +253,10 @@ class CoPoints:
         doc.openTransaction('coed: obj recompute')
         sk.recompute()
         doc.commitTransaction()
-        xp('coin_pts_chg.emit', **_ev)
-        self.base.ev.coin_pts_chg.emit('coin_create finish')
+        # xp('coin_pts_chg.emit', **_ev)
+        # self.base.ev.coin_pts_chg.emit('coin_create finish')
+        xp('creation_done.emit', **_ev)
+        self.creation_done.emit()
 
     def log_diff(self):
         xps('difference_lst', **_co)

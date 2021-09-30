@@ -3,9 +3,9 @@ from typing import Set
 import FreeCADGui as Gui
 import FreeCAD as App
 import Part
+from PySide2.QtCore import Signal, QObject
 
 from co_cmn import fmt_vec, seq_gen
-from co_flag import ObserverEvent
 from co_logger import xp, _ob_a, _ob_g, _ob_s, flow, xps
 
 
@@ -36,10 +36,24 @@ def log_some_stuff(obj, prop):
             xp(obj.Shape, **_ob_a)
 
 
-class EventProvider:
-    evo = ObserverEvent()
+class EventProvider(QObject):
+    add_selection = Signal(object, object, object, object)
+    clear_selection = Signal(object)
+    doc_recomputed = Signal(object)
+    obj_recomputed = Signal(object)
+    open_transact = Signal(object, str)
+    commit_transact = Signal(object)
 
 
+__evo = EventProvider()
+
+
+# need a single instance
+def observer_event_provider_get() -> EventProvider:
+    return __evo
+
+
+# noinspection PyPep8Naming,PyMethodMayBeStatic
 class AppDocumentObserver(object):
 
     def slotCreatedDocument(self, doc):
@@ -58,9 +72,7 @@ class AppDocumentObserver(object):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotRecomputedDocument', doc, **_ob_a)
         doc: App.Document
         xp('TypeId', doc.TypeId, **_ob_a)
-        EventProvider.evo.doc_recomputed.emit(doc)
-
-    # |35 AppDocumentObserver slotRecomputedDocument <Document object at 0000024EF043D020>
+        observer_event_provider_get().doc_recomputed.emit(doc)
 
     def slotUndoDocument(self, doc):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotUndoDocument', doc, **_ob_a)
@@ -76,26 +88,12 @@ class AppDocumentObserver(object):
             xp(f'Objects {doc.Objects}', **_ob_a)
             xp(f'ActiveObject {doc.ActiveObject}', **_ob_a)
             if doc.ActiveObject.TypeId == 'Sketcher::SketchObject':
-                EventProvider.evo.open_transact.emit(doc, name)
-
-
-    # | ActiveObject <Sketcher::SketchObject>
-    # | Objects [<Sketcher::SketchObject>]
-
-    # |   2 AppDocumentObserver slotOpenTransaction <Document object at 0000024EF043D020> Delete sketch geometry
-    # |   2 AppDocumentObserver slotOpenTransaction <Document object at 0000027808F67E40> Drag Curve
-    # |   2 AppDocumentObserver slotOpenTransaction <Document object at 00000240DEE24840> Drag Point
-    # |   2 AppDocumentObserver slotOpenTransaction <Document object at 0000016F22E3FC90> Add sketch line
-    # |   2 AppDocumentObserver slotOpenTransaction <Document object at 0000022F48C6E920> Add line to sketch wire
-    # |  24 AppDocumentObserver slotOpenTransaction <Document object at 0000024EF043D020> Sketch recompute
+                observer_event_provider_get().open_transact.emit(doc, name)
 
     def slotCommitTransaction(self, doc):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotCommitTransaction', doc, **_ob_a)
         doc: App.Document
         xp(doc.TypeId, **_ob_a)
-
-    # |21 AppDocumentObserver slotCommitTransaction <Document object at 0000024EF043D020>
-    # |36 AppDocumentObserver slotCommitTransaction <Document object at 0000024EF043D020>
 
     def slotAbortTransaction(self, doc):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotAbortTransaction', doc, **_ob_a)
@@ -127,9 +125,7 @@ class AppDocumentObserver(object):
                 xp('own source', obj.getPropertyByName('coed'), **_ob_a)
                 obj.removeProperty('coed')
             else:
-                EventProvider.evo.obj_recomputed.emit(obj)
-
-    # |34 AppDocumentObserver slotRecomputedObject <Sketcher::SketchObject>
+                observer_event_provider_get().obj_recomputed.emit(obj)
 
     def slotAppendDynamicProperty(self, obj, prop):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotAppendDynamicProperty', obj, prop, **_ob_a)
@@ -154,12 +150,10 @@ class AppDocumentObserver(object):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotAddedDynamicExtension', obj, extension,
            **_ob_a)
 
-    seq = seq_gen()
+    seq = seq_gen(reset=1000)
 
 
-__app_document_observer = AppDocumentObserver()
-
-
+# noinspection PyPep8Naming,PyMethodMayBeStatic
 class GuiDocumentObserver(object):
 
     def slotCreatedDocument(self, doc):
@@ -193,11 +187,8 @@ class GuiDocumentObserver(object):
         xp('GuiDocumentObserver slotResetEdit', obj, **_ob_g)
 
 
-__gui_document_observer = GuiDocumentObserver()
-
-
+# noinspection PyPep8Naming,PyMethodMayBeStatic
 class SelectionObserver:
-
     # *  The selection consists mainly out of following information per selected object:
     # *  - document (pointer)
     # *  - Object   (pointer)
@@ -208,23 +199,18 @@ class SelectionObserver:
     def addSelection(self, doc, obj, sub, pnt):  # Selection object
         xp(f'{next(SelectionObserver.seq):>3}', 'SelectionObserver addSelection doc:', str(doc), 'obj:', str(obj),
            'sub:', str(sub), 'pnt', str(pnt), **_ob_s)
-
         for sel_ex in Gui.Selection.getSelectionEx():
             xp('  sel_ex:', sel_ex, 'obj:', sel_ex.Object, **_ob_s)
             for sub_name in sel_ex.SubElementNames:
                 xp('    sub_name', sub_name, **_ob_s)
             for sub_obj in sel_ex.SubObjects:
                 xp('    sub_obj', repr(sub_obj), **_ob_s)
-
-        EventProvider.evo.add_selection.emit(doc, obj, sub, pnt)
+        observer_event_provider_get().add_selection.emit(doc, obj, sub, pnt)
 
     @flow
     def removeSelection(self, doc, obj, sub):
         xp(f'{next(SelectionObserver.seq):>3}', 'SelectionObserver removeSelection',
            str(doc), 'obj:', str(obj), 'sub:', str(sub), **_ob_s)
-
-    # 15:36:19  C:\Users\red\PycharmProjects\FreeCad\test_co.py(154)<class 'TypeError'>: removeSelection() missing 1 required positional argument: 'pnt'
-    # def removeSelection(self, doc, obj, sub, pnt):
 
     @flow
     def setSelection(self, doc, obj, sub, pnt):
@@ -233,23 +219,16 @@ class SelectionObserver:
 
     @flow
     def clearSelection(self, doc):
-        xp(f'{next(SelectionObserver.seq):>3}', 'SelectionObserver clearSelection',
-           str(doc), **_ob_s)
-
-    # 15:15:52  C:\Users\red\PycharmProjects\FreeCad\test_co.py(154)<class 'TypeError'>: clearSelection() missing 3 required positional arguments: 'obj', 'sub', and 'pnt'
-    # def clearSelection(self, doc, obj, sub, pnt):
+        xp(f'{next(SelectionObserver.seq):>3}', 'SelectionObserver clearSelection', str(doc), **_ob_s)
+        observer_event_provider_get().clear_selection.emit(doc)
 
     # def setPreselection(self, doc, obj, sub):
     #     xp(f'{next(SelectionObserver.seq):>3}', 'SelectionObserver setPreselection',
     #        str(doc), 'obj:', str(obj), 'sub:', str(sub), **_ob_s)
 
-    # def setPreselection(self, doc, obj, sub, pnt):
-
     # def removePreselection(self, doc, obj, sub):
     #     xp(f'{next(SelectionObserver.seq):>3}', 'SelectionObserver removePreselection',
     #        str(doc), 'obj:', str(obj), 'sub:', str(sub), **_ob_s)
-
-    # def removePreselection(self, doc, obj, sub, pnt):
 
     @flow
     def onSelectionChanged(self, doc, obj, sub, pnt):
@@ -260,9 +239,11 @@ class SelectionObserver:
     def pickedListChanged(self):
         xp(f'{next(SelectionObserver.seq):>3}', 'SelectionObserver pickedListChanged', **_ob_s)
 
-    seq = seq_gen()
+    seq = seq_gen(reset=1000)
 
 
+__app_document_observer = AppDocumentObserver()
+__gui_document_observer = GuiDocumentObserver()
 __selection_observer = SelectionObserver()
 
 

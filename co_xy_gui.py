@@ -2,13 +2,14 @@ from typing import List
 
 from PySide2.QtCore import Slot, QItemSelectionModel, QModelIndex, Qt
 from PySide2.QtWidgets import QWidget, QGroupBox, QCheckBox, QPushButton, QTableWidget, QBoxLayout, QVBoxLayout, \
-    QHBoxLayout, QTableWidgetItem
+    QHBoxLayout, QTableWidgetItem, QHeaderView
 import FreeCAD as App
 import FreeCADGui as Gui
 
 import co_gui
 import co_impl
 from co_logger import flow, xp, _xy, _ev, xps
+from co_observer import observer_event_provider_get
 from co_xy import XyEdges, XyEdge
 
 _QL = QBoxLayout
@@ -21,8 +22,12 @@ class XyGui:
         self.impl: co_impl.CoEd = self.base.base
         self.xy: XyEdges = self.impl.xy_edges
         self.tab_xy = QWidget(None)
-        xp('impl.ev.xy_edg_chg.connect(self.on_xy_chg)', **_ev)
-        self.impl.ev.xy_edg_chg.connect(self.on_xy_chg)
+        # xp('impl.ev.xy_edg_chg.connect(self.on_xy_chg)', **_ev)
+        # self.impl.ev.xy_edg_chg.connect(self.on_xy_chg)
+        xp('xy.created.connect', **_ev)
+        self.xy.created.connect(self.on_xy_create)
+        xp('xy.creation_done.connect', **_ev)
+        self.xy.creation_done.connect(self.on_xy_create_done)
 
         self.xy_grp_box: QGroupBox = QGroupBox(None)
         self.xy_chk_box_x: QCheckBox = QCheckBox()
@@ -54,19 +59,33 @@ class XyGui:
         return self.base.lay_get(li)
 
     @flow
-    def on_xy_chk_x_state_chg(self):
+    def on_xy_chk_x_state_chg(self, i):
         if not self.xy_chk_box_x.isChecked():
             self.xy_chk_box_y.setChecked(True)
+        if self.base.cfg_blubber:
+            self.update_table()
 
     @flow
-    def on_xy_chk_y_state_chg(self):
+    def on_xy_chk_y_state_chg(self, i):
         if not self.xy_chk_box_y.isChecked():
             self.xy_chk_box_x.setChecked(True)
+        if self.base.cfg_blubber:
+            self.update_table()
+
+    # @flow
+    # @Slot(str)
+    # def on_xy_chg(self, words):
+    #     xp('XY changed', words, **_ev)
 
     @flow
     @Slot(str)
-    def on_xy_chg(self, words):
-        xp('XY changed', words, **_ev)
+    def on_xy_create_done(self):
+        xp('XY creation done', **_ev)
+
+    @flow
+    @Slot(str, int, float)
+    def on_xy_create(self, typ: str, geo: int, dis: float):
+        xp(f'XY created: {typ} {geo} {dis:.2f}', **_ev)
 
 
     @flow
@@ -101,16 +120,28 @@ class XyGui:
 
     @flow
     def update_table(self):
+        self.xy_tbl_wid.setUpdatesEnabled(False)
+        # self.xy_tbl_wid.setEnabled(False)
+        # self.xy_tbl_wid.clearContents()
         self.xy_tbl_wid.setRowCount(0)
         __sorting_enabled = self.xy_tbl_wid.isSortingEnabled()
         self.xy_tbl_wid.setSortingEnabled(False)
         edg_list: List[XyEdge] = self.xy.edges
+        x: bool = self.xy_chk_box_x.isChecked()
+        y: bool = self.xy_chk_box_y.isChecked()
         for idx, item in enumerate(edg_list):
+            if self.base.cfg_blubber:
+                if x and not y and item.has_x:
+                    continue
+                if y and not x and item.has_y:
+                    continue
+                if x and y and item.has_x and item.has_y:
+                    continue
             self.xy_tbl_wid.insertRow(0)
-            s = "x {:.2f} y {:.2f} \nx {:.2f} y {:.2f}"
+            s = "x {:.1f} y {:.1f} \nx {:.1f} y {:.1f}"
             fmt = s.format(item.start.x, item.start.y, item.end.x, item.end.y)
             self.xy_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
-            fmt2 = "Id: {}\nx {} y {}".format(item.geo_idx, item.has_x, item.has_y)
+            fmt2 = "Id: {}\nx {} y {}".format(item.geo_idx, int(item.has_x), int(item.has_y))
             xp(f'geo {item.geo_idx} x {item.has_x} y {item.has_y}', **_xy)
             w_item = QTableWidgetItem(fmt2)
             w_item.setTextAlignment(Qt.AlignCenter)
@@ -120,6 +151,11 @@ class XyGui:
             xp('col 3', item.geo_idx, **_xy)
             self.xy_tbl_wid.setItem(0, 2, w_item)
         self.xy_tbl_wid.setSortingEnabled(__sorting_enabled)
+        hh: QHeaderView = self.xy_tbl_wid.horizontalHeader()
+        hh.resizeSections(QHeaderView.ResizeToContents)
+        # vh: QHeaderView = self.cons_tbl_wid.verticalHeader()
+        # self.xy_tbl_wid.setEnabled(True)
+        self.xy_tbl_wid.setUpdatesEnabled(True)
 
     @flow
     def selected(self):
@@ -132,7 +168,9 @@ class XyGui:
             self.xy_btn_create.setDisabled(False)
 
         doc_name = App.activeDocument().Name
+        observer_event_provider_get().blockSignals(True)
         Gui.Selection.clearSelection(doc_name, True)
+        observer_event_provider_get().blockSignals(False)
         ed_info = Gui.ActiveDocument.InEditInfo
         sk_name = ed_info[0].Name
 

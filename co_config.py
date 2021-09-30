@@ -1,8 +1,9 @@
 import json
 import threading
+from io import StringIO
 from typing import NamedTuple, Dict, Set
 
-from PySide2.QtCore import QByteArray, QDataStream, QIODevice
+from PySide2.QtCore import QByteArray, QDataStream, QIODevice, QObject, Signal
 from PySide2.QtGui import QFont, QColor
 
 from co_logger import xp, xps, flow, _cf
@@ -19,10 +20,12 @@ def cfg_decorator(cls):
     return cls
 
 
-class CfgBase:
+class CfgBase(QObject):
 
-    @flow
+    @flow(short=True)
     def __init__(self, d=None):
+        super().__init__()
+        xp('init CfgBase', self, 'cfg class', hasattr(self, '_cfg_class'), **_cf)
         if d is None:
             d = dict()
         self.data: Dict = d
@@ -36,20 +39,20 @@ class CfgBase:
 
     @data.setter
     def data(self, value):
-        xps('data set', self, value, **_cf)
+        xp('data.setter', self, value, **_cf)
         self.__data = value
 
     @staticmethod
     def cfg_keys() -> Set:
         return CfgBase.__cfg_keys
 
-    @flow
+    @flow(short=True) # don't touch instance until all init's are finished
     def __new__(cls, *args, **kwargs):
         # ! singleton
         if not cls.__instance:
             with cls.__lock:
                 cls.__instance = super().__new__(cls, *args, **kwargs)
-                xp('new instance', cls.__instance, 'cfg class', hasattr(cls, '_cfg_class'), **_cf)
+                # xp('new instance', cls.__instance, 'cfg class', hasattr(cls, '_cfg_class'), **_cf)
                 # ! otf collect cfg classes
                 if hasattr(cls, '_cfg_class'):
                     CfgBase.__cfg_names[cls] = cls.__instance
@@ -70,6 +73,7 @@ class CfgBase:
             def init_pass(self, *dt, **mp):
                 pass
             cls.__init__ = init_pass
+            xp('existing instance', cls.__instance, **_cf)
         return cls.__instance
 
     __instance: object = None
@@ -83,9 +87,10 @@ class CfgBase:
 
 class PersistJson(CfgBase):
 
-    @flow
+    @flow(short=True)
     def __init__(self):
         super(PersistJson, self).__init__()
+        xp('init PersistJson', self, **_cf)
         # self.mock = json.dumps(dict({'SubA': {'A': 'aaa'}}))
 
     @flow
@@ -98,7 +103,7 @@ class PersistJson(CfgBase):
             with open('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/coed_config.json', 'r') as file:
                 return json.load(file)
         except FileNotFoundError as err:
-            xp(err, **_cf)
+            xp('fall through:', err, **_cf)
             return dict()
         # return json.loads(self.mock)
 
@@ -107,16 +112,18 @@ class PersistJson(CfgBase):
         # todo save to file, remove dev code
         #  C:\Users\red\AppData\Roaming\JetBrains\PyCharmCE2021.2\scratches\coed_config.json
         with open('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/coed_config.json', 'w') as file:
-            json.dump(val, file)
+            json.dump(val, file, indent=2)
         # self.mock = json.dumps(val)
 
     xps(__qualname__)
 
 
 class Cfg(CfgBase):
-    @flow
+
+    @flow(short=True)
     def __init__(self):
         super(Cfg, self).__init__()
+        xp('init Cfg', self, **_cf)
         _inst = PersistJson()
         self.__cfg_persist: ClsInfo = ClsInfo(cls=_inst.__class__, inst=_inst)
         self.load()
@@ -163,22 +170,80 @@ class Cfg(CfgBase):
 
 
 @cfg_decorator
-class CfgFonts(CfgBase):
-    @flow
+class CfgBasics(CfgBase):
+
+    @flow(short=True)
     def __init__(self):
-        super(CfgFonts, self).__init__()
+        super(CfgBasics, self).__init__()
+        xp('init CfgBasics', self, **_cf)
         self.load()
 
     @flow
     def get(self, key):
-        if key in self.data.keys():
-            return self.data[key]
-        return None
+        if key in CfgBasics.__names:
+            if key in self.data.keys():
+                return self.data[key]
+            if key == self.SHOW_ONLY_VALID:
+                return self.__SHOW_ONLY_VALID_DEFAULT
+            return None
+        raise ValueError(key)
 
     @flow
     def set(self, key, val):
-        self.data = {**self.data, **{key: val}}
-        # self.data[key] = val
+        if key in CfgBasics.__names:
+            self.data = {**self.data, **{key: val}}
+            # self.data[key] = val
+        else:
+            raise ValueError(key)
+
+    @flow
+    def load(self):
+        self.data = self.load_delegate()
+        for x in self.data.keys():
+            xp('dbg', x, **_cf)
+
+    @flow
+    def save(self):
+        for x in self.data.keys():
+            xp('dbg', x, **_cf)
+        self.save_delegate(self.data)
+
+    @flow
+    def log_name_get(self) -> str:
+        return self.__LOG_NAME_DEFAULT
+
+    LOG_DIR: str = 'log_dir'
+    SHOW_ONLY_VALID: str = 'only_valid'
+    __names: Set[str] = {LOG_DIR, SHOW_ONLY_VALID}
+
+    __SHOW_ONLY_VALID_DEFAULT = False
+    __LOG_NAME_DEFAULT = 'coed.log'
+
+
+@cfg_decorator
+class CfgFonts(CfgBase):
+
+    @flow(short=True)
+    def __init__(self):
+        super().__init__()
+        xp('init CfgFonts', self, **_cf)
+        self.load()
+
+    @flow
+    def get(self, key):
+        if key in CfgFonts.__names:
+            if key in self.data.keys():
+                return self.data[key]
+            return None
+        raise ValueError(key)
+
+    @flow
+    def set(self, key, val):
+        if key in CfgFonts.__names:
+            self.data = {**self.data, **{key: val}}
+            # self.data[key] = val
+        else:
+            raise ValueError(key)
 
     @flow
     def load(self):
@@ -240,22 +305,32 @@ class CfgFonts(CfgBase):
 
 @cfg_decorator
 class CfgColors(CfgBase):
-    @flow
+
+    color_changed = Signal(str)
+
+    @flow(short=True)
     def __init__(self):
         super(CfgColors, self).__init__()
+        xp('init CfgColors', self, **_cf)
         self.load()
 
     @flow
     def get(self, key):
-        if key in self.data.keys():
-            return self.data[key]
-        return None
+        if key in CfgColors.__names.keys():
+            if key in self.data.keys():
+                return self.data[key]
+            return None
+        raise ValueError(key)
 
     @flow
     def set(self, key, val):
-        # * using the prop
-        self.data = {**self.data, **{key: val}}
-        # self.data[key] = val
+        if key in CfgColors.__names.keys():
+            # * using the prop
+            self.data = {**self.data, **{key: val}}
+            self.color_changed.emit(key)
+            # self.data[key] = val
+        else:
+            raise ValueError(key)
 
     @flow
     def load(self):
@@ -344,37 +419,50 @@ class CfgColors(CfgBase):
 xps(__name__)
 if __name__ == '__main__':
 
-    xps(__name__)
-
-    font_9 = QFont('Consolas', 9)
-    font_10 = QFont('Consolas', 10)
-
     m = CfgFonts()
-    m.font_set(CfgFonts.FONT_CFG_EDT, font_9)
-    m.save()
-    m.font_set(CfgFonts.FONT_CFG_EDT, font_10)
-    n = CfgFonts()
-    n.load()
-    xp(n.font_get(CfgFonts.FONT_CFG_EDT))
+    # xp('xxxx', m.font_get(CfgFonts.FONT_CFG_EDT))
 
-    xps()
 
-    s = '#f57f17'
-    c1 = QColor()
-    c1.setNamedColor(s)
-    xp(c1.name())
 
+    # xps(__name__)
+    # font_9 = QFont('Consolas', 9)
+    # font_10 = QFont('Consolas', 10)
+    # m = CfgFonts()
+    # m.font_set(CfgFonts.FONT_CFG_EDT, font_9)
+    # m.save()
+    # m.font_set(CfgFonts.FONT_CFG_EDT, font_10)
+    # n = CfgFonts()
+    # n.load()
+    # # xp(n.font_get(CfgFonts.FONT_CFG_EDT))
+    # xps()
+    # s = '#f57f17'
+    # c1 = QColor()
+    # c1.setNamedColor(s)
+    # # xp(c1.name())
+    # c = CfgColors()
+    # c.color_set(CfgColors.COLOR_XML_ELEM, c1)
+    # c.save()
+    #
+    # from pathlib import Path
+    # s = 'C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log'
+    # p = Path(s)
+    # # xp(p)
+    # # xp(p.resolve())
+    # b = CfgBasics()
+    # b.set(CfgBasics.LOG_PATH, str(p))
+    # b.save()
+    # Cfg().save()
 
 
     # m = CfgFonts()
-    # xp(m.get('A'))
+    # # xp(m.get('A'))
     # m.set('B', 'mdncksd')
-    # xp(m.get('B'))
-    # xp(m.get('A'))
+    # # xp(m.get('B'))
+    # # xp(m.get('A'))
     # m.save()
     # m.load()
-    # xp(m.get('B'))
-    # xp(m.get('A'))
+    # # xp(m.get('B'))
+    # # xp(m.get('A'))
     #
     # n = CfgColors()
     # n.set('N', 'nnnnnnnn')
@@ -384,6 +472,6 @@ if __name__ == '__main__':
     # cfg.load()
     # o = CfgFonts()
     # o.load()
-    # xp(o.get('A'))
-    # xp(m.get('A'))
+    # # xp(o.get('A'))
+    # # xp(m.get('A'))
 

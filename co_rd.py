@@ -2,6 +2,7 @@ from typing import List, Set
 import FreeCAD as App
 import Part
 import Sketcher
+from PySide2.QtCore import Signal, QObject
 
 import co_cs
 import co_impl
@@ -12,11 +13,12 @@ from co_logger import flow, xp, _cir, _rd, _ev, xps
 
 class RdCircle:
 
-    def __init__(self, idx: int, center: App.Vector, xu: float, rd: float):
+    def __init__(self, idx: int, center: App.Vector, xu: float, rd: float, typ: str):
         self.geo_idx: int = idx
         self.center: App.Vector = center
         self.angle_xu: float = xu
         self.radius: float = rd
+        self.type_id: str = typ
 
     def __str__(self):
         s = f"GeoIdx {self.geo_idx}, Center {fmt_vec(self.center)}, xu {self.angle_xu}, rad {self.radius}"
@@ -26,9 +28,13 @@ class RdCircle:
         return self.__str__()
 
 
-class RdCircles:
+class RdCircles(QObject):
+
+    created = Signal(int, float)
+    creation_done = Signal()
 
     def __init__(self, base):
+        super(RdCircles, self).__init__()
         self.__init = False
         self.base: co_impl.CoEd = base
         self.circles: List[RdCircle] = list()
@@ -47,9 +53,9 @@ class RdCircles:
     def circles(self) -> List[RdCircle]:
         if not self.__init:
             self.__init = True
-            self.circles_create()
+            self.circles_update()
         if self.base.flags.has(Dirty.RD_CIRCLES):
-            self.circles_create()
+            self.circles_update()
         return self._circles
 
     @circles.setter
@@ -61,13 +67,13 @@ class RdCircles:
     #     return self.rad_circle_detect()
 
     @flow
-    def circles_create(self):
+    def circles_update(self):
         self._circles.clear()
         geo_list = self.base.sketch.Geometry
         x: Part.Circle
-        c_list: List[RdCircle] = [RdCircle(idx, App.Vector(x.Center), x.AngleXU, x.Radius)
+        c_list: List[RdCircle] = [RdCircle(idx, App.Vector(x.Center), x.AngleXU, x.Radius, x.TypeId)
                                   for idx, x in enumerate(geo_list)
-                                  if x.TypeId == 'Part::GeomCircle']
+                                  if (x.TypeId == 'Part::GeomCircle') or (x.TypeId == 'Part::GeomArcOfCircle')]
         xp(c_list, **_rd)
         self._circles = c_list
 
@@ -80,10 +86,14 @@ class RdCircles:
                     doc.openTransaction('coed: Diameter constraint')
                     self.base.sketch.addConstraint(Sketcher.Constraint('Diameter', cir.geo_idx, radius * 2))
                     doc.commitTransaction()
+                    xp('created.emit', cir.type_id, cir.geo_idx, radius, **_ev)
+                    self.created.emit(cir.geo_idx, radius)
                 else:
                     doc.openTransaction('coed: Diameter constraint')
                     self.base.sketch.addConstraint(Sketcher.Constraint('Diameter', cir.geo_idx, cir.radius * 2))
                     doc.commitTransaction()
+                    xp('created.emit', cir.type_id, cir.geo_idx, cir.radius, **_ev)
+                    self.created.emit(cir.geo_idx, cir.radius)
             sk: Sketcher.SketchObject = self.base.sketch
             sk.addProperty('App::PropertyString', 'coed')
             sk.coed = 'rad_recompute'
@@ -92,12 +102,14 @@ class RdCircles:
             doc.commitTransaction()
             self.base.flags.set(Dirty.CONSTRAINTS)
             self.base.flags.set(Dirty.RD_CIRCLES)
-            xp('rad_chg.emit', **_ev)
-            self.base.ev.rad_chg.emit('rad create finish')
+            # xp('rad_chg.emit', **_ev)
+            # self.base.ev.rad_chg.emit('rad create finish')
+            xp('creation_done.emit', **_ev)
+            self.creation_done.emit()
 
     @flow
     def cons_get(self):
-        co_list: List[co_cs.Constraint] = self.base.constraints_get_list()
+        co_list: List[co_cs.Constraint] = self.base.cs.constraints
         rad: Set[int] = {x.first
                          for x in co_list
                          if x.type_id == 'Radius'}

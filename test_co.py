@@ -1,3 +1,4 @@
+import random
 import sys
 import unittest
 import FreeCAD as App
@@ -8,7 +9,7 @@ from PySide2.QtWidgets import QApplication, QWidget
 from co_main import main_g
 from co_config import Cfg
 import Sketcher
-from co_logger import xp, flow, file
+from co_logger import xp, flow
 # App.getDocument('Unbenannt').getObject('Sketch').delGeometries([0])
 from co_observer import register, unregister
 
@@ -139,10 +140,10 @@ class MyTest(unittest.TestCase):
         Cfg().save()
 
     def testCoincident(self):
-        add_geo(Part.LineSegment(App.Vector(-8.0, -5.0, 0.0), App.Vector( 4.0,  7.0, 0.0)), False)
-        add_geo(Part.LineSegment(App.Vector( 5.0,  7.0, 0.0), App.Vector( 7.0, -8.0, 0.0)), False)
-        add_geo(Part.LineSegment(App.Vector(-8.0, -6.0, 0.0), App.Vector( 7.0, -9.0, 0.0)), False)
-        add_geo(Part.LineSegment(App.Vector( 4.0,  8.0, 0.0), App.Vector(20.0, 10.0, 0.0)), False)
+        add_geo(Part.LineSegment(App.Vector(-8.0, -5.0, 0.0), App.Vector(4.0, 7.0, 0.0)), False)
+        add_geo(Part.LineSegment(App.Vector(5.0, 7.0, 0.0), App.Vector(7.0, -8.0, 0.0)), False)
+        add_geo(Part.LineSegment(App.Vector(-8.0, -6.0, 0.0), App.Vector(7.0, -9.0, 0.0)), False)
+        add_geo(Part.LineSegment(App.Vector(4.0, 8.0, 0.0), App.Vector(20.0, 10.0, 0.0)), False)
         add_geo2(Part.Point(App.Vector(16.0, -5.0, 0.0)))
         # add_geo(Part.LineSegment(App.Vector(8.000000,8.000000,0),App.Vector(10.000000,10.000000,0)), False)
         # add_geo(Part.Point(App.Vector(9.000000,9.000000,0)), False)
@@ -158,18 +159,86 @@ class MyTest(unittest.TestCase):
     def testCircle(self):
         add_geo(Part.Circle(App.Vector(4.5, 3.5, 0), App.Vector(0, 0, 1), 2))
         add_geo(Part.LineSegment(App.Vector(5.0, 7.0, 0.0), App.Vector(7.0, 8.0, 0.0)), False)
+        add_geo(Part.ArcOfCircle(Part.Circle(App.Vector(6.000000, 5.000000, 0), App.Vector(0, 0, 1), 2.000000),
+                                 -1.570796, 0.000000), False)
+        add_geo(Part.ArcOfCircle(Part.Circle(App.Vector(4.500000, 6.001692, 0), App.Vector(0, 0, 1), 1.500001),
+                                 6.282057, 3.142721), False)
         App.getDocument(DOC).recompute()
         register()
         self.ex = main_g(self.ActiveSketch, self.app)
         self.app.exec_()
         Cfg().save()
 
+    def testParallel(self):
+        a = [
+            ((5.30871, 5.55288, 0), (1.72666, 1.35812, 0)),
+            ((3.2369, 6.74799, 0), (1.12643, 1.65162, 0)),
+            ((0.897188, 7.24438, 0), (0.464873, 1.74528, 0)),
+            ((-1.48141, 6.99347, 0), (-0.193244, 1.62991, 0)),
+            ((-3.66604, 6.01981, 0), (-0.783502, 1.31683, 0)),
+            ((-5.44288, 4.41871, 0), (-1.24812, 0.836665, 0)),
+            ((-6.63799, 2.3469, 0), (-1.54162, 0.236428, 0)),
+            ((-7.13438, 0.00718786, 0), (-1.63528, -0.425127, 0)),
+            ((-6.88347, -2.37141, 0), (-1.51991, -1.08324, 0)),
+            ((-5.90981, -4.55604, 0), (-1.20683, -1.6735, 0)),
+            ((-4.30871, -6.33288, 0), (-0.726665, -2.13812, 0)),
+            ((-2.2369, -7.52799, 0), (-0.126428, -2.43162, 0)),
+            ((0.102812, -8.02438, 0), (0.535127, -2.52528, 0)),
+            ((2.48141, -7.77347, 0), (1.19324, -2.40991, 0)),
+            ((4.66604, -6.79981, 0), (1.7835, -2.09683, 0)),
+            ((6.44288, -5.19871, 0), (2.24812, -1.61666, 0)),
+            ((7.63799, -3.1269, 0), (2.54162, -1.01643, 0)),
+            ((8.13438, -0.787188, 0), (2.63528, -0.354873, 0)),
+            ((7.88347, 1.59141, 0), (2.51991, 0.303244, 0)),
+            ((6.90981, 3.77604, 0), (2.20683, 0.893502, 0))
+        ]
+        for x in a:
+            add_geo(Part.LineSegment(App.Vector(x[0]), App.Vector(x[1])), False)
+
+        App.getDocument(DOC).recompute()
+        register()
+        self.ex = main_g(self.ActiveSketch, self.app)
+        self.app.exec_()
+        Cfg().save()
+
+    def testRandom(self):
+        for x in range(100):
+            x = App.Vector(random.uniform(-20, 20), random.uniform(-20, 20), 0)
+            y = App.Vector(random.uniform(-20, 20), random.uniform(-20, 20), 0)
+            add_geo(Part.LineSegment(x, y), False)
+
+        App.getDocument(DOC).recompute()
+        register()
+        self.ex = main_g(self.ActiveSketch, self.app)
+        self.app.exec_()
+        Cfg().save()
 
     def tearDown(self) -> None:
-        file.close()
+        # file.close()
         print("tearDown")
-        unregister()         # Uninstall the resident function
+        unregister()  # Uninstall the resident function
         App.closeDocument(DOC)
+
+    '''
+    >> > Gui.runCommand('Sketcher_CompCreateArc', 0)
+    >> > App.getDocument('blub').getObject('Sketch').addGeometry(
+        Part.ArcOfCircle(Part.Circle(App.Vector(6.000000, 5.000000, 0), App.Vector(0, 0, 1), 2.000000), -1.570796,
+                         0.000000), False)
+    
+    ArcOfCircle (Radius : 2, Position : (6, 5, 0), Direction : (0, 0, 1), Parameter : (4.71239, 6.28319))
+    >>> arc.Content
+    '<GeoExtensions count="1">\n
+        <GeoExtension type="Sketcher::SketchGeometryExtension" internalGeometryType="0" geometryModeFlags="00000000000000000000000000000000"/>\n
+    </GeoExtensions>\n
+    <ArcOfCircle CenterX="6" CenterY="5" CenterZ="0" NormalX="0" NormalY="0" NormalZ="1" AngleXU="-0" Radius="2" StartAngle="4.71239" EndAngle="6.28319"/>\n'
+    >>> 
+    'Part::GeomArcOfCircle'
+    
+    >>> App.getDocument('blub').getObject('Sketch').addGeometry(
+    Part.ArcOfCircle(Part.Circle(App.Vector(4.500000,6.001692,0),App.Vector(0,0,1),1.500001),6.282057,3.142721),False)
+    >>> 
+    
+    '''
 
     # App.activeDocument() <Document object at 000001D763812470>
     # App.ActiveDocument <Document object at 000001D763812470>

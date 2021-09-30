@@ -1,15 +1,17 @@
 from math import dist, asin, degrees
+from operator import attrgetter
 from typing import List, Set
 
 import FreeCAD as App
 import Part
 import Sketcher
+from PySide2.QtCore import Signal, QObject
 
 import co_cs
 import co_impl
 from co_cmn import fmt_vec
 from co_flag import Dirty
-from co_logger import flow, xp, _hv, xps, _ev
+from co_logger import flow, xp, _hv, xps, _ev, Profile
 
 
 class HvEdge:
@@ -35,9 +37,13 @@ class HvEdge:
         return False
 
 
-class HvEdges:
+class HvEdges(QObject):
+
+    created = Signal(str, int)
+    creation_done = Signal()
 
     def __init__(self, base):
+        super(HvEdges, self).__init__()
         self.__init = False
         self.__tol_init = False
         self.__angle_init = False
@@ -74,12 +80,13 @@ class HvEdges:
 
     @property
     def angles(self) -> List[HvEdge]:
-        if not self.__angle_init:
-            self.__angle_init = True
-            self.angles_create()
+        with Profile(enable=False):
+            if not self.__angle_init:
+                self.__angle_init = True
+                self.angles_create()
 
-        if self.base.flags.has(Dirty.HV_EDGES):
-            self.angles_create()
+            if self.base.flags.has(Dirty.HV_EDGES):
+                self.angles_create()
 
         return self._angles
 
@@ -107,7 +114,7 @@ class HvEdges:
 
     @flow
     def cons_get(self) -> (Set[int], Set[int]):
-        co_list: List[co_cs.Constraint] = self.base.constraints_get_list()
+        co_list: List[co_cs.Constraint] = self.base.cs.constraints
         exist_h: Set[int] = {x.first
                              for x in co_list
                              if (x.type_id == 'Horizontal') and (x.first_pos == 0)}
@@ -130,15 +137,24 @@ class HvEdges:
             y_angle: float = self.__alpha(App.Vector(line.StartPoint), App.Vector(line.EndPoint))
             edg = HvEdge(idx, y_angle, App.Vector(line.StartPoint), App.Vector(line.EndPoint))
             self._angles.append(edg)
+        self._angles.sort(key=attrgetter('y_angel'))
         self.base.flags.reset(Dirty.HV_EDGES)
         self.log_angle()
 
     @flow
     def tolerances_create(self):
         self._tolerance_lst.clear()
+        # sorted by y
         for edg in self.angles:
-            if (edg.x_angel < self._tolerance) or (edg.y_angel < self._tolerance):
+            if edg.y_angel < self._tolerance:
                 self._tolerance_lst.append(edg)
+            else:
+                break
+        for edg in reversed(self.angles):
+            if edg.x_angel < self._tolerance:
+                self._tolerance_lst.append(edg)
+            else:
+                break
         self.log_tol()
 
     # @flow
@@ -158,12 +174,16 @@ class HvEdges:
                 doc.openTransaction('coed: Horizontal constraint')
                 self.base.sketch.addConstraint(con)
                 doc.commitTransaction()
+                xp('created.emit: Horizontal', edge.geo_idx, **_ev)
+                self.created.emit('Horizontal', edge.geo_idx)
                 continue
             if edge.y_angel <= self.tolerance:
                 con = Sketcher.Constraint('Vertical', edge.geo_idx)
                 doc.openTransaction('coed: Vertical constraint')
                 self.base.sketch.addConstraint(con)
                 doc.commitTransaction()
+                xp('created.emit: Vertical', edge.geo_idx, **_ev)
+                self.created.emit('Vertical', edge.geo_idx)
         sk: Sketcher.SketchObject = self.base.sketch
         sk.addProperty('App::PropertyString', 'coed')
         sk.coed = 'hv_recompute'
@@ -172,8 +192,10 @@ class HvEdges:
         doc.commitTransaction()
         self.base.flags.set(Dirty.HV_EDGES)
         self.base.flags.set(Dirty.CONSTRAINTS)
-        xp('hv_edg_chg.emit', **_ev)
-        self.base.ev.hv_edg_chg.emit('hv create finish')
+        # xp('hv_edg_chg.emit', **_ev)
+        # self.base.ev.hv_edg_chg.emit('hv create finish')
+        xp('creation_done.emit', **_ev)
+        self.creation_done.emit()
 
     def log_angle(self):
         xps('difference_lst', **_hv)

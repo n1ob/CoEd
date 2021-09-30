@@ -2,22 +2,22 @@ from typing import List, Dict, Tuple, Callable
 
 import FreeCAD as App
 from PySide2.QtCore import Qt, Slot
-from PySide2.QtWidgets import QComboBox, QWidget, QVBoxLayout, QPlainTextEdit, QApplication, QHBoxLayout, QPushButton, \
+from PySide2.QtWidgets import QComboBox, QWidget, QVBoxLayout, QPlainTextEdit, QApplication, QPushButton, \
     QTabWidget, QLabel, QTableWidget, QSpinBox, \
-    QAbstractItemView, QHeaderView, QGroupBox, QDoubleSpinBox, QCheckBox, QBoxLayout
+    QAbstractItemView, QHeaderView, QGroupBox, QDoubleSpinBox, QCheckBox, QBoxLayout, QLineEdit
 
 from co_cfg_gui import CfgGui
 from co_co_gui import CoGui
-from co_config import CfgFonts
 from co_cs_gui import CsGui
 from co_eq_gui import EqGui
 from co_geo_gui import GeoGui
 from co_hv_gui import HvGui
 from co_impl import CoEd
 from co_logger import xp, flow, _ly, xps, _fl, _ob_s
-from co_observer import EventProvider
+from co_observer import observer_event_provider_get
+from co_pa_gui import PaGui
 from co_rd_gui import RdGui
-from co_style import XMLHighlighter, my_style
+from co_style import my_style
 from co_xy_gui import XyGui
 
 _QL = QBoxLayout
@@ -30,8 +30,10 @@ class CoEdGui(QWidget):
     def __init__(self, base: CoEd, parent=None):
         super().__init__(parent)
         self.base: CoEd = base
-        self.evo = EventProvider.evo
-        self.evo.add_selection.connect(self.on_sel_chg_event)
+        self.evo = observer_event_provider_get()
+        self.evo.add_selection.connect(self.on_add_selection)
+        self.evo.clear_selection.connect(self.on_clear_selection)
+        self.cfg_blubber: bool = True
         flags: Qt.WindowFlags = Qt.Window
         flags |= Qt.WindowStaysOnTopHint
         self.setWindowFlags(flags)
@@ -47,13 +49,15 @@ class CoEdGui(QWidget):
         self.hv_gui = HvGui(self)
         self.xy_gui = XyGui(self)
         self.rd_gui = RdGui(self)
+        self.pa_gui = PaGui(self)
         self.tabs = QTabWidget(None)
         self.tabs.addTab(self.cs_gui.tab_cs, "Cs")
         self.tabs.addTab(self.co_gui.tab_co, "Co")
-        self.tabs.addTab(self.hv_gui.tab_hv, "H/V")
-        self.tabs.addTab(self.rd_gui.tab_rd, "Rad")
-        self.tabs.addTab(self.xy_gui.tab_xy, "X/Y")
+        self.tabs.addTab(self.hv_gui.tab_hv, "HV")
+        self.tabs.addTab(self.rd_gui.tab_rd, "Rd")
+        self.tabs.addTab(self.xy_gui.tab_xy, "XY")
         self.tabs.addTab(self.eq_gui.tab_eq, "Eq")
+        self.tabs.addTab(self.pa_gui.tab_pa, "Pa")
         self.tabs.addTab(self.geo_gui.tab_geo, "Geo")
         self.tabs.addTab(self.cfg_gui.tab_cfg, "Cfg")
         self.tabs.currentChanged.connect(self.on_cur_tab_chg)
@@ -73,7 +77,7 @@ class CoEdGui(QWidget):
         return sb
 
     def lay_get(self, obj_list: List) -> QBoxLayout:
-        w_list = [QPushButton, QDoubleSpinBox, QTableWidget, QGroupBox, QComboBox, QSpinBox, QPlainTextEdit]
+        w_list = [QPushButton, QDoubleSpinBox, QTableWidget, QGroupBox, QComboBox, QSpinBox, QPlainTextEdit, QLineEdit]
         layout = None
         for obj in obj_list:
             xp(type(obj).__name__, obj, **_ly)
@@ -105,9 +109,15 @@ class CoEdGui(QWidget):
     # -------------------------------------------------------------------------
     @flow
     @Slot(object, object, object, object)
-    def on_sel_chg_event(self, doc, obj, sub, pnt):
-        xp(f'on_sel_chg_event doc:', str(doc), 'obj:', str(obj), 'sub:', str(sub), 'pnt', str(pnt), **_ob_s)
-        self.tbl_clear_select(sub, pnt)
+    def on_add_selection(self, doc, obj, sub, pnt):
+        xp(f'on_add_selection: doc:', str(doc), 'obj: ', str(obj), 'sub: ', str(sub), 'pnt: ', str(pnt), **_ob_s)
+        self.tbl_clear_select_on_add(sub, pnt)
+
+    @flow
+    @Slot(object)
+    def on_clear_selection(self, doc):
+        xp(f'on_clear_selection: doc:', str(doc), **_ob_s)
+        self.tbl_clear_select()
 
     @flow
     def on_cur_tab_chg(self, index: int):
@@ -119,32 +129,37 @@ class CoEdGui(QWidget):
             3: (self.rd_gui.rad_tbl_wid, self.rd_gui.update_table),
             4: (self.xy_gui.xy_tbl_wid, self.xy_gui.update_table),
             5: (self.eq_gui.eq_tbl_wid, self.eq_gui.update_table),
+            6: (self.pa_gui.pa_tbl_wid, self.pa_gui.update_table),
         }
-        if index in range(5):
+        if index in range(7):
             tbl = info.get(index)[0]
             tbl.blockSignals(True)
             tbl.clearSelection()
             tbl.blockSignals(False)
             info.get(index)[1]()
 
+    def tbl_clear_select(self):
+        switcher: Dict[int, QTableWidget] = {
+            0: self.cs_gui.cons_tbl_wid,
+            1: self.co_gui.co_tbl_wid,
+            2: self.hv_gui.hv_tbl_wid,
+            3: self.rd_gui.rad_tbl_wid,
+            4: self.xy_gui.xy_tbl_wid,
+            5: self.eq_gui.eq_tbl_wid,
+            6: self.pa_gui.pa_tbl_wid
+        }
+        for tbl in switcher.values():
+            tbl.blockSignals(True)
+            tbl.clearSelection()
+            tbl.blockSignals(False)
+
     @flow
-    def tbl_clear_select(self, shape, pnt):
+    def tbl_clear_select_on_add(self, shape, pnt):
         from_gui: bool = True
         if App.Vector(pnt) == App.Vector(0, 0, 0):
             from_gui = False
         if from_gui:
-            switcher: Dict[int, QTableWidget] = {
-                0: self.cs_gui.cons_tbl_wid,
-                1: self.co_gui.co_tbl_wid,
-                2: self.hv_gui.hv_tbl_wid,
-                3: self.rd_gui.rad_tbl_wid,
-                4: self.xy_gui.xy_tbl_wid,
-                5: self.eq_gui.eq_tbl_wid
-            }
-            for tbl in switcher.values():
-                tbl.blockSignals(True)
-                tbl.clearSelection()
-                tbl.blockSignals(False)
+            self.tbl_clear_select()
 
         if shape.find('Vertex') != -1:
             no = int(shape[6:])
@@ -170,12 +185,12 @@ class CoEdGui(QWidget):
         tbl.sortItems(0, Qt.AscendingOrder)
         tbl.setSortingEnabled(True)
         hh: QHeaderView = tbl.horizontalHeader()
-        hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(0, QHeaderView.Interactive)
         hh.setSectionResizeMode(1, QHeaderView.Stretch)
-        hh.setSectionResizeMode(2, QHeaderView.Stretch)
+        hh.setSectionResizeMode(2, QHeaderView.Fixed)
         vh: QHeaderView = tbl.verticalHeader()
         # noinspection PyArgumentList
-        vh.setSectionResizeMode(QHeaderView.ResizeToContents)
+        vh.setSectionResizeMode(QHeaderView.Interactive)
         vh.setMaximumSectionSize(80)
         tbl_style = "QTableView::item {" \
                     "padding-left: 10px; " \

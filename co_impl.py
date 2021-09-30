@@ -10,13 +10,14 @@ import co_co
 import co_cs
 import co_eq
 import co_hv
+import co_pa
 import co_rd
 import co_xy
 from co_cmn import SketchType, fmt_vec, ConsTrans
-from co_flag import DataChgEvent, Dirty, Flags
-from co_logger import xp, _geo, flow, xps, _ob_s, _ev
+from co_flag import Dirty, Flags
+from co_logger import xp, _geo, flow, xps, _ob_s
 from co_lookup import Lookup
-from co_observer import EventProvider
+from co_observer import EventProvider, observer_event_provider_get
 
 
 class CoEd:
@@ -34,8 +35,8 @@ class CoEd:
         self.hv_edges: co_hv.HvEdges = co_hv.HvEdges(self)
         self.xy_edges: co_xy.XyEdges = co_xy.XyEdges(self)
         self.rd_circles: co_rd.RdCircles = co_rd.RdCircles(self)
-        self.ev = DataChgEvent()
-        self.evo = EventProvider.evo
+        self.pa_edges: co_pa.PaEdges = co_pa.PaEdges(self)
+        self.evo = observer_event_provider_get()
         self.evo.obj_recomputed.connect(self.on_obj_recomputed)
         self.evo.open_transact.connect(self.on_open_transact)
         self.__init = True
@@ -48,20 +49,6 @@ class CoEd:
     def sketch(self, value: SketchType):
         self.__sketch: Sketcher.SketchObject = value
         self.flags.all()
-
-    @flow
-    def constraints_get_list(self):
-        if self.flags.has(Dirty.CONSTRAINTS):
-            self.cs.constraints_detect()
-            xp('detect cons_chg.emit', **_ev)
-            self.ev.cons_chg.emit('cons detect finish')
-        return self.cs.constraints
-
-    @flow
-    def constraints_delete(self, idx_list: List[int]):
-        self.cs.constraints_delete(idx_list)
-        xp('delete cons_chg.emit', **_ev)
-        self.ev.cons_chg.emit('cons delete finish')
 
     @flow
     @Slot(object)
@@ -206,7 +193,7 @@ class CoEd:
                 root.appendChild(leaf_geo_idx)
 
                 leaf_cons: Element = doc.createElement('constraints_get_list')
-                co_list = self.constraints_get_list()
+                co_list = self.cs.constraints
                 lo = Lookup(sk)
                 for idx, item in enumerate(co_list):
                     s1, s2 = lo.lookup(ConsTrans(item.co_idx, item.type_id, item.sub_type, item.fmt))
@@ -393,7 +380,8 @@ class CoEd:
                     idx += 1
 
                 xps('constraints_get_list')
-                co_list = self.constraints_get_list()
+                co_list = self.cs.constraints
+                # co_list = self.constraints_get_list()
                 lo = Lookup(sk)
                 for idx, item in enumerate(co_list):
                     xp(f"idx: '{idx}' type_id: '{item.type_id}' sub_type: '{item.sub_type}' item: {item}")
@@ -482,7 +470,8 @@ class CoEd:
 
     @flow
     def print_constraints(self):
-        obj = self.constraints_get_list()
+        obj = self.cs.constraints
+        # obj = self.constraints_get_list()
         # noinspection PyUnresolvedReferences
         xp(self.sketch.Constraints)
         xp(', '.join(str(x) for x in obj))

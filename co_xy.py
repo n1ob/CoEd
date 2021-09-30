@@ -3,6 +3,7 @@ from typing import Set, NamedTuple, List, Tuple
 import FreeCAD as App
 import Part
 import Sketcher
+from PySide2.QtCore import Signal, QObject
 
 import co_cs
 import co_impl
@@ -45,9 +46,13 @@ class XyEdge:
         return False
 
 
-class XyEdges:
+class XyEdges(QObject):
+
+    created = Signal(str, int, float)
+    creation_done = Signal()
 
     def __init__(self, base):
+        super(XyEdges, self).__init__()
         self.__init = False
         self.base: co_impl.CoEd = base
         self.edges: List[XyEdge] = list()
@@ -70,7 +75,7 @@ class XyEdges:
 
     @flow
     def cons_get(self) -> (Set[Tuple[GeoId, GeoId]], Set[Tuple[GeoId, GeoId]]):
-        co_list: List[co_cs.Constraint] = self.base.constraints_get_list()
+        co_list: List[co_cs.Constraint] = self.base.cs.constraints
         exist_x: Set[Tuple[GeoId, GeoId]] = {(GeoId(x.first, x.first_pos), GeoId(x.second, x.second_pos))
                                              for x in co_list
                                              if (x.type_id == 'DistanceX') and (x.second_pos != 0)}
@@ -111,14 +116,18 @@ class XyEdges:
                 doc.openTransaction('coed: DistanceX constraint')
                 self.base.sketch.addConstraint(Sketcher.Constraint('DistanceX', idx, 1, idx, 2, (x2 - x1)))
                 doc.commitTransaction()
-                xp(f'DistanceX, geo_start ({idx}.1) geo_end ({idx}.2), {(x2 - x1)}', **_xy)
+                xp(f'DistanceX created, geo_start ({idx}.1) geo_end ({idx}.2), {(x2 - x1)}', **_xy)
+                xp('created.emit: DistanceX', idx, (x2 - x1), **_ev)
+                self.created.emit('DistanceX', idx, (x2 - x1))
             if (not edg.has_y) and y:
                 y1 = edg.start.y
                 y2 = edg.end.y
-                doc.openTransaction('coed: DistanceX constraint')
-                self.base.sketch.addConstraint(Sketcher.Constraint('DistanceX', idx, 1, idx, 2, (y2 - y1)))
+                doc.openTransaction('coed: DistanceY constraint')
+                self.base.sketch.addConstraint(Sketcher.Constraint('DistanceY', idx, 1, idx, 2, (y2 - y1)))
                 doc.commitTransaction()
-                xp(f'DistanceX, geo_start ({idx}.1) geo_end ({idx}.2), {(y2 - y1)}', **_xy)
+                xp(f'DistanceY created, geo_start ({idx}.1) geo_end ({idx}.2), {(y2 - y1)}', **_xy)
+                xp('created.emit: DistanceY', idx, (y2 - y1), **_ev)
+                self.created.emit('DistanceY', idx, (y2 - y1))
 
         if len(edg_list) > 0:
             sk: Sketcher.SketchObject = self.base.sketch
@@ -129,8 +138,10 @@ class XyEdges:
             doc.commitTransaction()
             self.base.flags.set(Dirty.CONSTRAINTS)
             self.base.flags.set(Dirty.XY_EDGES)
-            xp('xy_edg_chg.emit', **_ev)
-            self.base.ev.xy_edg_chg.emit('xy create finish')
+            # xp('xy_edg_chg.emit', **_ev)
+            # self.base.ev.xy_edg_chg.emit('xy create finish')
+            xp('creation_done.emit', **_ev)
+            self.creation_done.emit()
 
 
 xps(__name__)

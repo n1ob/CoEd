@@ -1,9 +1,9 @@
-from PySide2.QtCore import QRegExp, Qt
+from PySide2.QtCore import QRegExp, Qt, Slot
 from PySide2.QtGui import QSyntaxHighlighter, QColor, QTextCharFormat, QPalette
 from PySide2.QtWidgets import QStyleFactory
 
 from co_config import CfgColors
-from co_logger import xps
+from co_logger import xps, flow, xp
 
 
 class XMLHighlighter(QSyntaxHighlighter):
@@ -12,36 +12,42 @@ class XMLHighlighter(QSyntaxHighlighter):
     """
 
     # noinspection PyArgumentList
+    @flow(short=True)
     def __init__(self, parent=None):
         super().__init__(parent)
-        cfg = CfgColors()
-
+        self.cfg = CfgColors()
+        self.cfg.color_changed.connect(self.on_color_changed)
         self.highlight_rules = list()
+        self.value_format = QTextCharFormat()
+        self.value_start_expr = QRegExp("\"")
+        self.value_end_expr = QRegExp("\"(?=[\s></])")
+        self.rules_format()
+
+    @flow
+    def rules_format(self):
+        self.highlight_rules.clear()
         xml_elem_format = QTextCharFormat()
-        xml_elem_format.setForeground(cfg.color_get(CfgColors.COLOR_XML_ELEM))
+        xml_elem_format.setForeground(self.cfg.color_get(CfgColors.COLOR_XML_ELEM))
         self.highlight_rules.append((QRegExp("\\b[A-Za-z0-9_]+(?=[\s/>])"), xml_elem_format))
 
         xml_attr_format = QTextCharFormat()
         xml_attr_format.setFontItalic(True)
-        xml_attr_format.setForeground(cfg.color_get(CfgColors.COLOR_XML_ATTR))
+        xml_attr_format.setForeground(self.cfg.color_get(CfgColors.COLOR_XML_ATTR))
         self.highlight_rules.append((QRegExp("\\b[A-Za-z0-9_]+(?=\\=)"), xml_attr_format))
         self.highlight_rules.append((QRegExp("="), xml_attr_format))
 
-        self.value_format = QTextCharFormat()
-        self.value_format.setForeground(cfg.color_get(CfgColors.COLOR_XML_VAL))
-        self.value_start_expr = QRegExp("\"")
-        self.value_end_expr = QRegExp("\"(?=[\s></])")
+        self.value_format.setForeground(self.cfg.color_get(CfgColors.COLOR_XML_VAL))
 
         single_line_comment_format = QTextCharFormat()
-        single_line_comment_format.setForeground(cfg.color_get(CfgColors.COLOR_XML_LN_CMT))
+        single_line_comment_format.setForeground(self.cfg.color_get(CfgColors.COLOR_XML_LN_CMT))
         self.highlight_rules.append((QRegExp("<!--[^\n]*-->"), single_line_comment_format))
 
         text_format = QTextCharFormat()
-        text_format.setForeground(cfg.color_get(CfgColors.COLOR_XML_TXT))
+        text_format.setForeground(self.cfg.color_get(CfgColors.COLOR_XML_TXT))
         self.highlight_rules.append((QRegExp(">(.+)(?=</)"), text_format))
 
         keyword_format = QTextCharFormat()
-        keyword_format.setForeground(cfg.color_get(CfgColors.COLOR_XML_KEYWORD))
+        keyword_format.setForeground(self.cfg.color_get(CfgColors.COLOR_XML_KEYWORD))
         keyword_patterns = ["\\b?xml\\b", "/>", ">", "<", "</"]
         self.highlight_rules += [(QRegExp(pattern), keyword_format) for pattern in keyword_patterns]
 
@@ -67,6 +73,13 @@ class XMLHighlighter(QSyntaxHighlighter):
                 comment_length = end_index - start_index + self.value_end_expr.matchedLength()
             self.setFormat(start_index, comment_length, self.value_format)
             start_index = self.value_start_expr.indexIn(text, start_index + comment_length)
+
+    @flow
+    @Slot(str)
+    def on_color_changed(self, cid: str):
+        xp('color chg', cid)
+        self.rules_format()
+        self.rehighlight()
 
 
 def set_style(wid):

@@ -2,7 +2,7 @@ from typing import List, Set
 
 from PySide2.QtCore import Slot, QItemSelectionModel, QModelIndex, Qt
 from PySide2.QtWidgets import QBoxLayout, QWidget, QGroupBox, QLabel, QTableWidget, QComboBox, QPushButton, QVBoxLayout, \
-    QHBoxLayout, QTableWidgetItem
+    QHBoxLayout, QTableWidgetItem, QHeaderView
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -13,6 +13,7 @@ from co_cmn import ConType, ConsTrans
 from co_cs import Constraints, Constraint
 from co_logger import xp, _cs, flow, _ev, Profile
 from co_lookup import Lookup
+from co_observer import observer_event_provider_get
 
 _QL = QBoxLayout
 
@@ -23,10 +24,14 @@ class CsGui:
         self.impl: co_impl.CoEd = self.base.base
         self.cs: Constraints = self.impl.cs
         self.tab_cs = QWidget(None)
-        # xp('impl.ev.hv_edg_chg.connect(self.on_hv_chg)', **_cs)
-        # self.impl.ev.hv_edg_chg.connect(self.on_cs_chg)
-        xp('impl.ev.cons_chg.connect(self.on_cons_chg)', **_ev)
-        self.impl.ev.cons_chg.connect(self.on_cs_chg)
+        # xp('impl.ev.cons_chg.connect(self.on_cons_chg)', **_ev)
+        # self.impl.ev.cons_chg.connect(self.on_cs_chg)
+        xp('cs.deleted.connect', **_ev)
+        self.cs.deleted.connect(self.on_cs_del)
+        xp('cs.deletion_done.connect', **_ev)
+        self.cs.deletion_done.connect(self.on_cs_del_done)
+        xp('cs.update_done.connect', **_ev)
+        self.cs.update_done.connect(self.on_cs_up_done)
 
         self.cons_grp_box: QGroupBox = QGroupBox(None)
         self.cons_lbl_con: QLabel = QLabel()
@@ -54,11 +59,31 @@ class CsGui:
                self.cons_tbl_wid]]
         return self.base.lay_get(li)
 
+    # @flow
+    # @Slot(str)
+    # def on_cs_chg(self, words):
+    #     xp('Constraints changed', words, **_ev)
+    #     co_list: List[Constraint] = self.cs.constraints
+    #     # co_list: List[Constraint] = self.impl.constraints_get_list()
+    #     self.update_combo(co_list)
+
     @flow
-    @Slot(str)
-    def on_cs_chg(self, words):
-        xp('Constraints changed', words, **_ev)
-        co_list: List[Constraint] = self.impl.constraints_get_list()
+    @Slot(int)
+    def on_cs_del(self, i: int):
+        xp('Constraints deleted', i, **_ev)
+
+    @flow
+    @Slot()
+    def on_cs_del_done(self):
+        xp('Constraints deletion done', **_ev)
+        co_list: List[Constraint] = self.cs.constraints
+        self.update_combo(co_list)
+
+    @flow
+    @Slot()
+    def on_cs_up_done(self):
+        xp('Constraints update done', **_ev)
+        co_list: List[Constraint] = self.cs.constraints
         self.update_combo(co_list)
 
     @flow
@@ -83,15 +108,18 @@ class CsGui:
         for idx in rows:
             xp(str(idx.row()), ':', str(idx.data()), idx.data().co_idx, **_cs)
             del_list.append(idx.data().co_idx)
-        self.impl.constraints_delete(del_list)
+        self.cs.constraints_delete(del_list)
         self.update_table()
 
     @flow
     def update_table(self, typ: ConType = ConType.ALL):
+        # self.cons_tbl_wid.setEnabled(False)
+        self.cons_tbl_wid.setUpdatesEnabled(False)
+        # self.cons_tbl_wid.clearContents()
         self.cons_tbl_wid.setRowCount(0)
         __sorting_enabled = self.cons_tbl_wid.isSortingEnabled()
         self.cons_tbl_wid.setSortingEnabled(False)
-        co_list: List[Constraint] = self.impl.constraints_get_list()
+        co_list: List[Constraint] = self.cs.constraints
         for idx, item in enumerate(co_list):
             if typ == ConType.ALL or typ == ConType(item.type_id):
                 li: List[int] = list()
@@ -101,9 +129,13 @@ class CsGui:
                 self.cons_tbl_wid.setItem(0, 1, QTableWidgetItem(str(item)))
                 w_item = QTableWidgetItem()
                 w_item.setData(Qt.DisplayRole, item)
-                # w_item.setData(Qt.DisplayRole, item.co_idx)
                 self.cons_tbl_wid.setItem(0, 2, w_item)
         self.cons_tbl_wid.setSortingEnabled(__sorting_enabled)
+        hh: QHeaderView = self.cons_tbl_wid.horizontalHeader()
+        hh.resizeSections(QHeaderView.ResizeToContents)
+        # vh: QHeaderView = self.cons_tbl_wid.verticalHeader()
+        # self.cons_tbl_wid.setEnabled(True)
+        self.cons_tbl_wid.setUpdatesEnabled(True)
 
     @flow
     def selected(self):
@@ -117,7 +149,9 @@ class CsGui:
 
         lo = Lookup(self.impl.sketch)
         doc_name = App.activeDocument().Name
+        observer_event_provider_get().blockSignals(True)
         Gui.Selection.clearSelection(doc_name, True)
+        observer_event_provider_get().blockSignals(False)
         ed_info = Gui.ActiveDocument.InEditInfo
         sk_name = ed_info[0].Name
 

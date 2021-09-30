@@ -1,12 +1,12 @@
 from enum import Enum
-from typing import NamedTuple, Dict, Tuple
+from typing import NamedTuple, Dict, Tuple, List, Iterable
 import threading
 
 from FreeCADTypes import Sketcher
 import FreeCAD as App
 
 from co_flag import Cs
-from co_logger import xps
+from co_logger import xps, xp
 
 try:
     SketchType = Sketcher.SketchObject
@@ -38,7 +38,7 @@ pt_typ_int = {y: x for x, y in pt_typ_str.items()}
 
 
 def fmt_vec(vec: App.Vector) -> str:
-    return f'({vec.x:.2f}, {vec.y:.2f}, {vec.z:.2f})'
+    return f'({vec.x:.1f}, {vec.y:.1f}, {vec.z:.1f})'
 
 
 # noinspection SpellCheckingInspection,PyPep8
@@ -120,26 +120,67 @@ def get_class_that_defined_method(method):
     return None
 
 
-def seq_gen(start=1, step=1):
+def seq_gen(start=1, step=1, reset=0):
     num = start
     while True:
         yield num
+        if reset and (num >= reset):
+            num = start
         num += step
+
+
+def complement_color(rgb: str) -> str:
+    s1 = rgb.replace('#', '0x')
+    # f'{0xffffff - 0x110011:06x}'
+    return f'#{0xffffff - int(s1, 16):06x}'
+
+
+def split_rgb(color: str) -> (int, int, int):
+    strip = color.lstrip('#')
+    r = int(strip[:2], 16)
+    g = int(strip[2:4], 16)
+    b = int(strip[4:6], 16)
+    return r, g, b
+
+
+# https://stackoverflow.com/questions/3942878/how-to-decide-font-color-in-white-or-black-depending-on-background-color
+def lumi(rgb: Iterable) -> float:  # iterable contains [r, g, b]
+    res: List[float] = list()
+    for c in rgb:
+        c = c / 255.0
+        if c <= 0.03928:
+            c = c / 12.92
+        else:
+            c = ((c+0.055) / 1.055) ** 2.4
+        res.append(c)
+    lu = 0.2126 * res[0] + 0.7152 * res[1] + 0.0722 * res[2]
+    return lu
+
+
+def contrast_color(lu: float) -> str:
+    if lu > 0.179:  # use #000000 else use #ffffff
+        return '#000000'
+    else:
+        return '#ffffff'
+
 
 xps(__name__)
 if __name__ == '__main__':
 
-    s1 = Singleton()
-    s2 = Singleton()
+    sc = '#aaaaaa'
+    xp(contrast_color(lumi(split_rgb(sc))))
 
-    print(s1)
-    print(s2)
-
-    s = seq_gen()
-    print(next(s))
-    print(next(s))
-    print(next(s))
-    print(next(s))
+    # s1 = Singleton()
+    # s2 = Singleton()
+    #
+    # print(s1)
+    # print(s2)
+    #
+    # s = seq_gen()
+    # print(next(s))
+    # print(next(s))
+    # print(next(s))
+    # print(next(s))
 
 
     # import re

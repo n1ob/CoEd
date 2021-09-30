@@ -4,6 +4,8 @@ import sys
 import traceback
 from datetime import datetime
 from typing import Set, List, AnyStr
+from time import process_time, perf_counter
+import threading, queue
 
 '''
 >>> import dis
@@ -65,42 +67,9 @@ def fullname(o):
         return module + '.' + o.__class__.__name__
 
 '''
+
+
 # todo have a dbg switch ???
-
-class XpConf:
-    topics: Set[str] = set()
-
-    def __init__(self, topic='', prepend=None, std_err=False, separator=None, append=None):
-        self.std_err = std_err
-        self.prepend = prepend
-        self.append = append
-        self.topic = topic
-        self.separator = separator
-        self.logfile = False
-
-    def k(self, add_ind: int = 0) -> dict:
-        d: dict = dict()
-        if add_ind > 0:
-            d.update({'add_indent': add_ind})
-        if self.std_err:
-            d.update({'file': sys.stderr})
-        if self.prepend is not None:
-            d.update({'prepend': self.prepend})
-        if self.append is not None:
-            d.update({'append': self.append})
-        if self.topic is not None:
-            d.update({'topic': self.topic})
-        if self.separator is not None:
-            d.update({'sep': self.separator})
-        return d
-
-
-class XpWriter:
-
-    def write(self, s: AnyStr) -> int:
-        xp(s)
-        return 0
-
 
 def stack_tracer():
     xps("stack tracer")
@@ -135,86 +104,14 @@ def stack_tracer():
     xps("eof")
 
 
-file = open('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log', 'a', 1)
-
-
-def xp(*args, **kwargs) -> None:
-    global GLB_HEADER
-    global GLB_IND
-    global GLB_LOG
-    if GLB_HEADER:
-        GLB_HEADER = False
-        _xp_header()
-    add_ind: int = kwargs.pop('add_indent', 0)
-    prepend: str = kwargs.pop('prepend', '   ')
-    append: str = kwargs.pop('append', None)
-    topic: str = kwargs.pop('topic', '')
-    _pre = prepend.ljust(3)
-    _topic: List[str] = topic.split('.')
-    flow_dir: int = kwargs.pop('flow', -1)
-    indent = GLB_IND
-    # args = ['xx ' '{}' ' xx'.format(i) for i in args]
-    args = list(args)
-    ai = ''
-    if add_ind > 0:
-        ai = ' ' * add_ind
-    if flow_dir == -1:
-        args[0] = '| {}{}'.format(ai, args[0])
-    elif flow_dir == 0:
-        args[0] = '|   {}'.format(args[0])
-    elif flow_dir == 1:
-        args[0] = '|-> {}'.format(args[0])
-    if indent > 0:
-        args.insert(0, ' ' * (indent - 1))
-    if prepend is not None:
-        args.insert(0, _pre)
-    if append is not None:
-        args.append(append)
-    # print(*args, **kwargs, sep='-')
-    # if topic in XpConf.topics:
-    if not XpConf.topics.isdisjoint(_topic):
-        print(*args, **kwargs)
-        if GLB_LOG:
-            # '../../AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/'
-            # C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log
-            # with open('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log', 'a', 1) as file:
-            file.write(' '.join(f'{x}' for x in args))
-            file.write('\n')
-
-
-def xps(*args: object, **kwargs: object) -> None:
-    xp(f"---{' '.join(f'{x}' for x in args)}----------------------------------------", **kwargs)
-
-
-def _xp_header(val=None):
-    if val is None:
-        val = pathlib.Path().resolve()
-    xp('')
-    xp('')
-    xps(f'{datetime.now().hour}:{datetime.now().minute:02}:{datetime.now().second} --- {val}')
-    # xp(f'{__file__}')
-    xp('')
-    xp('')
-
-
-def sep(*args):
-    print(f'----{args}---')
-
-
-def _xpt(*args):
-    [XpConf.topics.add(x) for x in args]
-
-
 # ! profiling
 class Profile:
     def __init__(self, enable: bool = True, top_n: int = 10):
-        # print('__init__ called')
         self.profiler = None
         self.top_n: int = top_n
         self.enable: bool = enable
 
     def __enter__(self):
-        # print('__enter__ called')
         import cProfile
         if self.enable:
             self.profiler = cProfile.Profile()
@@ -222,7 +119,6 @@ class Profile:
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
-        # print('__exit__ called')
         if exc_type:
             xp(f'exc_type: {exc_type}')
             xp(f'exc_value: {exc_value}')
@@ -244,6 +140,108 @@ class Profile:
             output.close()
 
 
+class XpConf:
+    topics: Set[str] = set()
+
+    def __init__(self, topic='', prepend=None, std_err=False, separator=None, append=None):
+        self.std_err = std_err
+        self.prepend = prepend
+        self.append = append
+        self.topic = topic
+        self.separator = separator
+        self.logfile = False
+
+    def k(self, add_ind: int = 0) -> dict:
+        d: dict = dict()
+        if add_ind > 0:
+            d.update({'add_indent': add_ind})
+        if self.std_err:
+            d.update({'file': sys.stderr})
+        if self.prepend is not None:
+            d.update({'prepend': self.prepend})
+        if self.append is not None:
+            d.update({'append': self.append})
+        if self.topic is not None:
+            d.update({'topic': self.topic})
+        if self.separator is not None:
+            d.update({'sep': self.separator})
+        return d
+
+
+def xp(*args, **kwargs):
+    global __perf_start
+    kwargs['prepre'] = f'{perf_counter() - __perf_start:9.3f}'
+    global GLB_IND
+    kwargs['glb_ind'] = GLB_IND
+    global GLB_HEADER
+    if GLB_HEADER:
+        GLB_HEADER = False
+        _xp_header()
+    xp_worker.queue.put((args, kwargs))
+
+
+class XpWorker:
+    def __init__(self):
+        self.queue = queue.Queue()
+        self.thread_event = threading.Event()
+        self.thread = threading.Thread(target=self._xp, args=(self.thread_event,), daemon=True)
+        self.log_path = ''
+        self.run()
+
+    def log_path_set(self, val: str):
+        self.log_path = val
+        self.thread_event.set()
+
+    def _xp(self, ev: threading.Event):
+        ev.wait()
+        # todo enable file cfg
+        with open('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log', 'a', 1) as file:
+            while True:
+                args, kwargs = self.queue.get()
+                global GLB_LOG
+                add_ind: int = kwargs.pop('add_indent', 0)
+                prepend: str = kwargs.pop('prepend', '   ')
+                append: str = kwargs.pop('append', None)
+                topic: str = kwargs.pop('topic', '')
+                prepre: str = kwargs.pop('prepre', '')
+                glb_ind: int = kwargs.pop('glb_ind', '')
+
+                _pre = prepend.ljust(3)
+                _topic: List[str] = topic.split('.')
+                flow_dir: int = kwargs.pop('flow', -1)
+                indent = glb_ind
+                # args = ['xx ' '{}' ' xx'.format(i) for i in args]
+                args = list(args)
+                ai = ''
+                if add_ind > 0:
+                    ai = ' ' * add_ind
+                if flow_dir == -1:
+                    args[0] = '| {}{}'.format(ai, args[0])
+                elif flow_dir == 0:
+                    args[0] = '|   {}'.format(args[0])
+                elif flow_dir == 1:
+                    args[0] = '|-> {}'.format(args[0])
+                if indent > 0:
+                    args.insert(0, ' ' * (indent - 1))
+                if prepend is not None:
+                    args.insert(0, _pre)
+                if prepre is not None:
+                    args.insert(0, prepre)
+                if append is not None:
+                    args.append(append)
+                # print(*args, **kwargs, sep='-')
+                # if topic in XpConf.topics:
+                if not XpConf.topics.isdisjoint(_topic):
+                    print(*args, **kwargs)
+                    if GLB_LOG:
+                        file.write(' '.join(f'{x}' for x in args))
+                        file.write('\n')
+                self.queue.task_done()
+
+    def run(self):
+        self.thread.start()
+
+
 def flow(_func=None, *, off=False, short=False):
     def decorator_flow(func):
         @functools.wraps(func)
@@ -262,7 +260,6 @@ def flow(_func=None, *, off=False, short=False):
                 f = nam[len(nam) - 1]
                 p = '.'.join(x for x in nam if x is not f)
                 _flow['flow'] = 1
-                # kw = {'topic': 'flow', 'flow': 1}
                 xp('{}  ({})'.format(f, p), **_flow)
                 obj = func(*args, **kwargs)
                 GLB_IND -= 2
@@ -272,11 +269,9 @@ def flow(_func=None, *, off=False, short=False):
                 kwargs_repr = [f"{k}={v!r}" for k, v in kwargs.items()]
                 signature = ", ".join(args_repr + kwargs_repr)
                 _flow['flow'] = 1
-                # kw = {'topic': 'flow', 'flow': 1}
                 xp(f"{func.__name__} ({signature})", **_flow)
                 obj = func(*args, **kwargs)
                 _flow['flow'] = 0
-                # kw = {'topic': 'flow', 'flow': 0}
                 xp(f"{func.__name__}  ->  {obj!r}", **_flow)
                 # xp(f"|   {func.__name__!r}  ->  {obj!r}", **kw)
                 GLB_IND -= 2
@@ -290,6 +285,37 @@ def flow(_func=None, *, off=False, short=False):
         return decorator_flow(_func)
 
 
+def xps(*args: object, **kwargs: object) -> None:
+    xp(f"---{' '.join(f'{x}' for x in args)}----------------------------------------", **kwargs)
+
+
+def _xp_header(val=None):
+    if val is None:
+        val = pathlib.Path().resolve()
+    xp('')
+    xp('')
+    xps(f'{datetime.now().hour}:{datetime.now().minute:02}:{datetime.now().second} --- {val}')
+    # xp(f'{__file__}')
+    xp('')
+    xp('')
+
+
+class XpWriter:
+    def write(self, s: AnyStr) -> int:
+        xp(s)
+        return 0
+
+
+def sep(*args):
+    print(f'----{args}---')
+
+
+def _xpt(*args):
+    [XpConf.topics.add(x) for x in args]
+
+
+__perf_start: float = perf_counter()
+xp_worker: XpWorker = XpWorker()
 # ! shorter form for flow
 GLB_SHORT: bool = False
 # ! don't change
@@ -300,7 +326,10 @@ GLB_LOG: bool = True
 GLB_HEADER: bool = True
 
 # '': use without kwargs
-_xpt('', 'all')
+# _xpt('', 'event', 'observer', 'all')
+# _xpt('', 'flow', 'parallel', 'event', 'observer')
+_xpt('')
+
 
 topics = {
     'co': XpConf('all.coincident.impl', 'co').k(),
@@ -309,6 +338,7 @@ topics = {
     'hv': XpConf('all.hor_vert.impl', 'hv').k(),
     'xy': XpConf('all.xy_dist.impl', 'xy').k(),
     'rd': XpConf('all.radius.impl', 'rd').k(),
+    'pa': XpConf('all.parallel.impl', 'pa').k(),
     'ly': XpConf('all.layout.gui', 'ly').k(),
     'fl': XpConf('all.flags', 'fl').k(),
     'eq': XpConf('all.equal', 'eq').k(),
@@ -334,6 +364,7 @@ _ly = topics['ly']
 _fl = topics['fl']
 _eq = topics['eq']
 _ev = topics['ev']
+_pa = topics['pa']
 
 _prn_edge = topics['pr_edg']
 _co_co = topics['co_co']

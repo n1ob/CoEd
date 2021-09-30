@@ -1,15 +1,17 @@
+import time
 from typing import List, Set, Tuple
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide2.QtCore import Qt, QModelIndex, QItemSelectionModel, Slot
 from PySide2.QtWidgets import QWidget, QGroupBox, QLabel, QDoubleSpinBox, QPushButton, QTableWidget, QBoxLayout, \
-    QVBoxLayout, QHBoxLayout, QTableWidgetItem
+    QVBoxLayout, QHBoxLayout, QTableWidgetItem, QApplication, QProxyStyle, QStyle, QHeaderView
 
 import co_gui
 import co_impl
 from co_cmn import GeoPtn, pt_typ_int, fmt_vec, pt_typ_str
 from co_co import CoPoints, CoPoint, GeoId
-from co_logger import flow, xp, _co, _ev, xps
+from co_logger import flow, xp, _co, _ev, xps, Profile
+from co_observer import observer_event_provider_get
 
 _QL = QBoxLayout
 
@@ -20,8 +22,12 @@ class CoGui:
         self.impl: co_impl.CoEd = self.base.base
         self.co: CoPoints = self.impl.co_points
         self.tab_co = QWidget(None)
-        xp('impl.ev.coin_pts_chg.connect(self.on_co_chg)', **_ev)
-        self.impl.ev.coin_pts_chg.connect(self.on_co_chg)
+        # xp('impl.ev.coin_pts_chg.connect(self.on_co_chg)', **_ev)
+        # self.impl.ev.coin_pts_chg.connect(self.on_co_chg)
+        xp('co.created.connect', **_ev)
+        self.co.created.connect(self.on_co_create)
+        xp('co.creation_done.connect', **_ev)
+        self.co.creation_done.connect(self.on_co_create_done)
 
         self.co_grp_box: QGroupBox = QGroupBox(None)
         self.co_lbl: QLabel = QLabel()
@@ -48,16 +54,29 @@ class CoGui:
                self.co_tbl_wid]]
         return self.base.lay_get(li)
 
+    # @flow
+    # @Slot(str)
+    # def on_co_chg(self, words):
+    #     xp('Co changed', words, **_ev)
+
     @flow
-    @Slot(str)
-    def on_co_chg(self, words):
-        xp('Co changed', words, **_ev)
+    @Slot(tuple, tuple)
+    def on_co_create(self, first: tuple, second: tuple):
+        xp('Co created:', first, second, **_ev)
+
+    @flow
+    @Slot()
+    def on_co_create_done(self):
+        xp('Co creation done', **_ev)
 
     @flow
     def on_co_tol_chg(self, val):
-        value = self.co_dbl_sp_box.value()
-        self.co.tolerance = value
-        self.update_table()
+        self.co_dbl_sp_box.setEnabled(False)
+        with Profile(enable=False):
+            # value = self.co_dbl_sp_box.value()
+            self.co.tolerance = val
+            self.update_table()
+        self.co_dbl_sp_box.setEnabled(True)
 
     @flow
     def on_co_create_btn_clk(self):
@@ -90,6 +109,9 @@ class CoGui:
 
     @flow
     def update_table(self):
+        # self.co_tbl_wid.setEnabled(False)
+        self.co_tbl_wid.setUpdatesEnabled(False)
+        # self.co_tbl_wid.clearContents()
         self.co_tbl_wid.setRowCount(0)
         __sorting_enabled = self.co_tbl_wid.isSortingEnabled()
         self.co_tbl_wid.setSortingEnabled(False)
@@ -102,10 +124,12 @@ class CoGui:
             res_lst.append(p)
         self.log_filter(res_lst)
         for idx, pt in enumerate(res_lst):
+            if self.base.cfg_blubber and (len(pt.pt_distance_lst) == 0):
+                continue
             self.co_tbl_wid.insertRow(0)
-            fmt = f"({pt.geo_id.geo_idx}.{pt_typ_str[pt.geo_id.type_id]}) {pt.point.x: 6.2f} {pt.point.y: 6.2f}"
+            fmt = f"({pt.geo_id.idx}.{pt_typ_str[pt.geo_id.typ]}) {pt.point.x:.1f}, {pt.point.y:.1f}"
             self.co_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
-            fm = ''.join("{0:2}.{1} ".format(x.geo_id.geo_idx, pt_typ_str[x.geo_id.type_id]) for x in pt.pt_distance_lst)
+            fm = ''.join("{0:2}.{1} ".format(x.geo_id.idx, pt_typ_str[x.geo_id.typ]) for x in pt.pt_distance_lst)
             xp('fm:', fm, **_co)
             self.co_tbl_wid.setItem(0, 1, QTableWidgetItem(fm))
             w_item = QTableWidgetItem()
@@ -113,6 +137,16 @@ class CoGui:
             self.co_tbl_wid.setItem(0, 2, w_item)
             xp('new row: Id', idx, fmt, fm, **_co)
         self.co_tbl_wid.setSortingEnabled(__sorting_enabled)
+        hh: QHeaderView = self.co_tbl_wid.horizontalHeader()
+        hh.resizeSections(QHeaderView.ResizeToContents)
+        # hh.setSectionResizeMode(0, QHeaderView.Interactive)
+        # hh.setSectionResizeMode(1, QHeaderView.Stretch)
+        # hh.setSectionResizeMode(2, QHeaderView.Fixed)
+        vh: QHeaderView = self.co_tbl_wid.verticalHeader()
+        # vh.setSectionResizeMode(QHeaderView.Interactive)
+        # self.co_tbl_wid.setEnabled(True)
+        self.co_tbl_wid.setUpdatesEnabled(True)
+
 
     @flow
     def selected(self):
@@ -125,17 +159,19 @@ class CoGui:
             self.co_btn_create.setDisabled(False)
 
         doc_name = App.activeDocument().Name
+        observer_event_provider_get().blockSignals(True)
         Gui.Selection.clearSelection(doc_name, True)
+        observer_event_provider_get().blockSignals(False)
         ed_info = Gui.ActiveDocument.InEditInfo
         sk_name = ed_info[0].Name
 
         for item in indexes:
             co: CoPoint = item.data()
             xp(f'row: {str(item.row())} id: {co.geo_id} pt: {fmt_vec(co.point)} {co.pt_distance_lst}', **_co)
-            ptn: GeoPtn = GeoPtn(co.geo_id.geo_idx, co.geo_id.type_id)
+            ptn: GeoPtn = GeoPtn(co.geo_id.idx, co.geo_id.typ)
             self.lookup(doc_name, ptn, sk_name)
             for diff in co.pt_distance_lst:
-                ptn: GeoPtn = GeoPtn(diff.geo_id.geo_idx, diff.geo_id.type_id)
+                ptn: GeoPtn = GeoPtn(diff.geo_id.idx, diff.geo_id.typ)
                 self.lookup(doc_name, ptn, sk_name)
 
     def lookup(self, doc_name, ptn, sk_name):
@@ -154,6 +190,21 @@ class CoGui:
         xp(f'filter list', **_co)
         for item in obj:
             xp(item, **_co)
+
+
+class CustomStyle(QProxyStyle):
+    def styleHint(self, hint, option, PySide2_QtWidgets_QStyleOption=None, NoneType=None, *args, **kwargs):
+        # def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == QStyle.SH_SpinBox_KeyPressAutoRepeatRate:
+            return 10**10
+        elif hint == QStyle.SH_SpinBox_ClickAutoRepeatRate:
+            return 10**10
+        elif hint == QStyle.SH_SpinBox_ClickAutoRepeatThreshold:
+            # You can use only this condition to avoid the auto-repeat,
+            # but better safe than sorry ;-)
+            return 10**10
+        else:
+            return super().styleHint(hint, option, PySide2_QtWidgets_QStyleOption, NoneType, args, kwargs)
 
 
 xps(__name__)

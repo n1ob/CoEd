@@ -1,7 +1,9 @@
-from typing import List
+from typing import List, Dict
 
 import Sketcher
 import FreeCAD as App
+from PySide2.QtCore import Signal, QObject
+
 import co_impl
 from co_cmn import pt_typ_str, ConType
 from co_flag import Cs, Dirty
@@ -36,19 +38,26 @@ class Constraint:
                                self.value, self.co_idx)  # (6),(7)
 
 
-class Constraints:
+class Constraints(QObject):
+
+    deleted = Signal(int)
+    deletion_done = Signal()
+    update_done = Signal()
 
     def __init__(self, base):
+        super(Constraints, self).__init__()
         self.base: co_impl.CoEd = base
         # self.ev = self.base.ev
         self.__constraints: List[Constraint] = list()
 
     @property
     def constraints(self):
+        if self.base.flags.has(Dirty.CONSTRAINTS):
+            self.constraints_update()
         return self.__constraints
 
     @flow
-    def constraints_detect(self):
+    def constraints_update(self):
         self.__constraints.clear()
         # noinspection PyUnresolvedReferences
         co_list: List[Sketcher.Constraint] = self.base.sketch.Constraints
@@ -260,13 +269,15 @@ class Constraints:
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
                 self.__constraints.append(con)
-        # xp('cons_chg.emit', **_ev)
-        # self.ev.cons_chg.emit('cons detect finish')
         self.base.flags.reset(Dirty.CONSTRAINTS)
+        # xp('cons_chg.emit', **_ev)
+        # self.base.ev.cons_chg.emit('cons detect finish')
+        xp('update_done.emit', **_ev)
+        self.update_done.emit()
 
     @staticmethod
     def __get_kwargs(cont: Cs, item: Sketcher.Constraint, fmt: str) -> dict:
-        d: dict = dict()
+        d: Dict = dict()
         if Cs.F in cont:
             d['FIRST'] = item.First
         if Cs.FP in cont:
@@ -295,6 +306,8 @@ class Constraints:
                 doc.openTransaction('coed: delete constraint')
                 self.base.sketch.delConstraint(i)
                 doc.commitTransaction()
+                xp('deleted.emit', i, **_ev)
+                self.deleted.emit(i)
             self.base.flags.set(Dirty.CONSTRAINTS)
             doc.openTransaction('coed: obj recompute')
             sk: Sketcher.SketchObject = self.base.sketch
@@ -302,9 +315,11 @@ class Constraints:
             sk.coed = 'cons_recompute'
             sk.recompute()
             doc.commitTransaction()
-            # xp('cons_chg.emit', **_ev)
-            # self.ev.cons_chg.emit('cons delete finish')
+            # xp('delete cons_chg.emit', **_ev)
+            # self.base.ev.cons_chg.emit('cons delete finish')
+            xp('deletion_done.emit', **_ev)
             self.base.flags.all()
+            self.deletion_done.emit()
 
     '''
     | idx: 0 type_id: Part::GeomLineSegment start: (4.00, 8.00, 0.00) end: (20.00, 10.00, 0.00)

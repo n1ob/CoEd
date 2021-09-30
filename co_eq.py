@@ -1,7 +1,9 @@
+from operator import attrgetter
 from typing import List, NamedTuple, Tuple, Set
 
 import Sketcher
 import FreeCAD as App
+from PySide2.QtCore import Signal, QObject
 
 import co_cs
 from co_cmn import ConType
@@ -42,6 +44,8 @@ class EqEdge:
         for x in self.edg_differences:
             if x.difference <= tol:
                 res.append(x)
+            else:
+                break
         return res
 
     @flow
@@ -96,8 +100,13 @@ class EqEdge:
                     xp(f'disjoint x: {x} {cn[x]} y: {y} {cn[y]}', **_eq)
 
 
-class EqEdges:
+class EqEdges(QObject):
+
+    created = Signal(int, int)
+    creation_done = Signal()
+
     def __init__(self, base) -> None:
+        super(EqEdges, self).__init__()
         self.__init = False
         self.base: co_impl.CoEd = base
         self.__diff_init = False
@@ -149,7 +158,6 @@ class EqEdges:
 
     @flow
     def differences_create(self) -> None:
-        # filter for linesegments
         self._differences.clear()
         geo_lst = [(idx, geo.length()) for idx, geo
                    in enumerate(self.base.sketch.Geometry)
@@ -171,6 +179,8 @@ class EqEdges:
                 else:
                     a.edg_differences.append(GeoDiff(id_x, abs(le_y - le_x)))
             self._differences.append(a)
+        for edg in self._differences:
+            edg.edg_differences.sort(key=attrgetter('difference'))
         self.base.flags.reset(Dirty.EQ_EDGES)
         self.log_diff()
 
@@ -188,16 +198,18 @@ class EqEdges:
         doc: App.Document = App.ActiveDocument
         if not len(edge_lst):
             return
+        s: Set[Tuple[int, int]] = set()
         for edge in edge_lst:
             for diff in edge.edg_differences:
+                if (diff.geo_idx, edge.geo_idx) in s:
+                    xp('skip redundant', diff.geo_idx, edge.geo_idx, **_eq)
+                    continue
+                s.add((edge.geo_idx, diff.geo_idx))
                 doc.openTransaction('coed: Equal constraint')
                 self.base.sketch.addConstraint(Sketcher.Constraint('Equal', edge.geo_idx, diff.geo_idx))
                 doc.commitTransaction()
-
-        self.base.flags.set(Dirty.CONSTRAINTS)
-        self.base.flags.set(Dirty.EQ_EDGES)
-        self.base.flags.set(Dirty.XY_EDGES)
-        self.base.flags.set(Dirty.COIN_POINTS)
+                xp('created.emit', **_ev)
+                self.created.emit(edge.geo_idx, diff.geo_idx)
 
         sk: Sketcher.SketchObject = self.base.sketch
         sk.addProperty('App::PropertyString', 'coed')
@@ -205,13 +217,18 @@ class EqEdges:
         doc.openTransaction('coed: obj recompute')
         sk.recompute()
         doc.commitTransaction()
-        xp('ev.eq_chg.emit', **_ev)
-        self.base.ev.eq_chg.emit('eq create finish')
+        self.base.flags.set(Dirty.CONSTRAINTS)
+        self.base.flags.set(Dirty.EQ_EDGES)
+        self.base.flags.set(Dirty.XY_EDGES)
+        self.base.flags.set(Dirty.COIN_POINTS)
+        # xp('ev.eq_chg.emit', **_ev)
+        # self.base.ev.eq_chg.emit('eq create finish')
+        xp('creation_done.emit', **_ev)
+        self.creation_done.emit()
 
-    # Sketcher.Constraint('Equal', 4, 6)
     @flow
     def cons_get(self) -> Set[Tuple[int, int]]:
-        co_list: List[co_cs.Constraint] = self.base.constraints_get_list()
+        co_list: List[co_cs.Constraint] = self.base.cs.constraints
         col: Set[Tuple[int, int]] = {(x.first, x.second)
                                      for x in co_list
                                      if ConType(x.type_id) == ConType.EQUAL}
