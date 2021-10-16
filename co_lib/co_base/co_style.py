@@ -2,15 +2,14 @@ from PySide2.QtCore import QRegExp, Qt, Slot
 from PySide2.QtGui import QSyntaxHighlighter, QColor, QTextCharFormat, QPalette
 from PySide2.QtWidgets import QStyleFactory
 
-from co_config import CfgColors
-from co_logger import xps, flow, xp
+from .co_config import CfgColors
+from .co_logger import xps, flow, xp
 
 
 class XMLHighlighter(QSyntaxHighlighter):
     """
     Class for highlighting xml text inherited from QSyntaxHighlighter
     """
-
     # noinspection PyArgumentList
     @flow(short=True)
     def __init__(self, parent=None):

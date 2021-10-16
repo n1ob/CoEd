@@ -1,75 +1,13 @@
 import functools
 import pathlib
+import queue
 import sys
+import threading
 import traceback
 from datetime import datetime
+from time import perf_counter
 from typing import Set, List, AnyStr
-from time import process_time, perf_counter
-import threading, queue
 
-'''
->>> import dis
->>> add = lambda x, y: x + y
->>> type(add)
-<class 'function'>
->>> dis.dis(add)
-  1           0 LOAD_FAST                0 (x)
-              2 LOAD_FAST                1 (y)
-              4 BINARY_ADD
-              6 RETURN_VALUE
->>> add
-<function <lambda> at 0x7f30c6ce9ea0>
-
-(lambda x:
-(x % 2 and 'odd' or 'even'))(3)
-'odd'
-(lambda x:
-(x % 2 and 'odd' or 'even'))(4)
-'even'
-
->>> (lambda x, y, z: x + y + z)(1, 2, 3)
-6
->>> (lambda x, y, z=3: x + y + z)(1, 2)
-6
->>> (lambda x, y, z=3: x + y + z)(1, y=2)
-6
->>> (lambda *args: sum(args))(1,2,3)
-6
->>> (lambda **kwargs: sum(kwargs.values()))(one=1, two=2, three=3)
-6
->>> (lambda x, *, y=0, z=0: x + y + z)(1, y=2, z=3)
-6
-
-def fullname(o):
-    # o.__module__ + "." + o.__class__.__qualname__ is an example in
-    # this context of H.L. Mencken's "neat, plausible, and wrong."
-    # Python makes no guarantees as to whether the __module__ special
-    # attribute is defined, so we take a more circumspect approach.
-    # Alas, the module name is explicitly excluded from __qualname__
-    # in Python 3.
-
-    print(inspect.signature(o))
-    for x in inspect.getmembers(o):
-        print(x)
-    module = o.__class__.__module__
-    print('o'.ljust(30), o)
-    print('o.__class__'.ljust(30), o.__class__)
-    print('o.__name__'.ljust(30), o.__name__)
-    if hasattr(o, '__module__'):
-        print('o.__module__'.ljust(30), o.__module__)
-    print('o.__class__.__module__'.ljust(30), o.__class__.__module__)
-    print('o.__class__.__name__'.ljust(30), o.__class__.__name__)
-
-
-    if module is None or module == str.__class__.__module__:
-        return o.__class__.__name__  # Avoid reporting __builtin__
-    else:
-        return module + '.' + o.__class__.__name__
-
-'''
-
-
-# todo have a dbg switch ???
 
 def stack_tracer():
     xps("stack tracer")
@@ -84,6 +22,7 @@ def stack_tracer():
     xps("format_exc:")
     formatted_lines = traceback.format_exc().splitlines()
     for line in formatted_lines:
+        print(line)
         xp(line)
     # xps("format_exception:")
     # # exc_type below is ignored on 3.5 and later
@@ -143,13 +82,14 @@ class Profile:
 class XpConf:
     topics: Set[str] = set()
 
-    def __init__(self, topic='', prepend=None, std_err=False, separator=None, append=None):
+    def __init__(self, topic='', prepend=None, std_err=False, separator=None, append=None, thread_info=False):
         self.std_err = std_err
         self.prepend = prepend
         self.append = append
         self.topic = topic
         self.separator = separator
         self.logfile = False
+        self.thread_info = thread_info
 
     def k(self, add_ind: int = 0) -> dict:
         d: dict = dict()
@@ -165,14 +105,20 @@ class XpConf:
             d.update({'topic': self.topic})
         if self.separator is not None:
             d.update({'sep': self.separator})
+        if self.thread_info:
+            d.update({'thread_info': 1})
         return d
 
 
 def xp(*args, **kwargs):
+    if kwargs.pop('thread_info', 0):
+        kwargs['thread_name'] = threading.current_thread().name
+        kwargs['thread_ident'] = threading.current_thread().ident
     global __perf_start
     kwargs['prepre'] = f'{perf_counter() - __perf_start:9.3f}'
-    global GLB_IND
-    kwargs['glb_ind'] = GLB_IND
+    ind, idx = ind_get(threading.current_thread().ident)
+    kwargs['glb_ind'] = ind
+    kwargs['thread_idx'] = idx
     global GLB_HEADER
     if GLB_HEADER:
         GLB_HEADER = False
@@ -194,8 +140,7 @@ class XpWorker:
 
     def _xp(self, ev: threading.Event):
         ev.wait()
-        # todo enable file cfg
-        with open('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/logger.log', 'a', 1) as file:
+        with open(self.log_path, 'a', 1) as file:
             while True:
                 args, kwargs = self.queue.get()
                 global GLB_LOG
@@ -205,7 +150,12 @@ class XpWorker:
                 topic: str = kwargs.pop('topic', '')
                 prepre: str = kwargs.pop('prepre', '')
                 glb_ind: int = kwargs.pop('glb_ind', '')
-
+                thread_name: str = kwargs.pop('thread_name', '')
+                thread_ident: str = kwargs.pop('thread_ident', '')
+                thread_idx: str = kwargs.pop('thread_idx', 0)
+                th = ''
+                if len(thread_name):
+                    th = f'({thread_name}:{thread_ident})'
                 _pre = prepend.ljust(3)
                 _topic: List[str] = topic.split('.')
                 flow_dir: int = kwargs.pop('flow', -1)
@@ -216,11 +166,11 @@ class XpWorker:
                 if add_ind > 0:
                     ai = ' ' * add_ind
                 if flow_dir == -1:
-                    args[0] = '| {}{}'.format(ai, args[0])
+                    args[0] = f'{thread_idx:2}| {ai}{args[0]}'
                 elif flow_dir == 0:
-                    args[0] = '|   {}'.format(args[0])
+                    args[0] = f'{thread_idx:2}|   {args[0]}'
                 elif flow_dir == 1:
-                    args[0] = '|-> {}'.format(args[0])
+                    args[0] = f'{thread_idx:2}|-> {args[0]}'
                 if indent > 0:
                     args.insert(0, ' ' * (indent - 1))
                 if prepend is not None:
@@ -229,13 +179,20 @@ class XpWorker:
                     args.insert(0, prepre)
                 if append is not None:
                     args.append(append)
+                if len(th):
+                    args.append(th)
                 # print(*args, **kwargs, sep='-')
                 # if topic in XpConf.topics:
-                if not XpConf.topics.isdisjoint(_topic):
-                    print(*args, **kwargs)
-                    if GLB_LOG:
-                        file.write(' '.join(f'{x}' for x in args))
-                        file.write('\n')
+                try:
+                    if not XpConf.topics.isdisjoint(_topic):
+                        # print(*args, **kwargs)
+                        if GLB_LOG:
+                            file.write(' '.join(f'{x}' for x in args))
+                            file.write('\n')
+                except ReferenceError as err:
+                    file.write('ReferenceError')
+                    file.write(str(err))
+                    file.write('\n')
                 self.queue.task_done()
 
     def run(self):
@@ -246,13 +203,12 @@ def flow(_func=None, *, off=False, short=False):
     def decorator_flow(func):
         @functools.wraps(func)
         def wrapper_flow(*args, **kwargs):
-            global GLB_IND
             global GLB_LOG
             _flow['flow'] = -1
             if off or not GLB_LOG:
                 obj = func(*args, **kwargs)
             elif short or GLB_SHORT:
-                GLB_IND += 2
+                ind_inc(threading.current_thread().ident, 2)
                 if hasattr(func, '__qualname__'):
                     nam = func.__qualname__.split('.')
                 else:
@@ -262,9 +218,11 @@ def flow(_func=None, *, off=False, short=False):
                 _flow['flow'] = 1
                 xp('{}  ({})'.format(f, p), **_flow)
                 obj = func(*args, **kwargs)
-                GLB_IND -= 2
+                _flow['flow'] = 0
+                xp('exit {}  ({})'.format(f, p), **_flow)
+                ind_dec(threading.current_thread().ident, 2)
             else:
-                GLB_IND += 2
+                ind_inc(threading.current_thread().ident, 2)
                 args_repr = [repr(a) for a in args]
                 kwargs_repr = [f"{k}={v!r}" for k, v in kwargs.items()]
                 signature = ", ".join(args_repr + kwargs_repr)
@@ -274,11 +232,9 @@ def flow(_func=None, *, off=False, short=False):
                 _flow['flow'] = 0
                 xp(f"{func.__name__}  ->  {obj!r}", **_flow)
                 # xp(f"|   {func.__name__!r}  ->  {obj!r}", **kw)
-                GLB_IND -= 2
+                ind_dec(threading.current_thread().ident, 2)
             return obj
-
         return wrapper_flow
-
     if _func is None:
         return decorator_flow
     else:
@@ -310,67 +266,107 @@ def sep(*args):
     print(f'----{args}---')
 
 
-def _xpt(*args):
+def _xp_topic(*args):
     [XpConf.topics.add(x) for x in args]
+
+
+_IND = dict()
+
+
+def seq_gen(start=1, step=1, reset=0):
+    num = start
+    while True:
+        yield num
+        if reset and (num >= reset):
+            num = start
+        num += step
+
+
+_T_IDX = seq_gen()
+
+
+# ! thread sensitive indent handling
+def ind_get(ident):
+    global _T_IDX
+    try:
+        return _IND[ident]
+    except KeyError:
+        _IND[ident] = (0, next(_T_IDX))
+        return _IND[ident]
+
+
+def ind_inc(ident, inc):
+    global _T_IDX
+    try:
+        j, x = _IND[ident]
+        j += inc
+        _IND[ident] = (j, x)
+    except KeyError:
+        _IND[ident] = (0, next(_T_IDX))
+
+
+def ind_dec(ident, dec):
+    global _T_IDX
+    try:
+        j, x = _IND[ident]
+        j -= dec
+        _IND[ident] = (j, x)
+    except KeyError:
+        _IND[ident] = (0, next(_T_IDX))
 
 
 __perf_start: float = perf_counter()
 xp_worker: XpWorker = XpWorker()
 # ! shorter form for flow
-GLB_SHORT: bool = False
-# ! don't change
-GLB_IND: int = -2
+GLB_SHORT: bool = True
 # !shut up switch
 GLB_LOG: bool = True
 # ! print the header once
 GLB_HEADER: bool = True
 
+
 # '': use without kwargs
-# _xpt('', 'event', 'observer', 'all')
-# _xpt('', 'flow', 'parallel', 'event', 'observer')
-_xpt('')
+_xp_topic('')
+# _xp_topic('', 'all')
 
 
 topics = {
-    'co': XpConf('all.coincident.impl', 'co').k(),
-    'cs': XpConf('all.constraint.impl', 'cs').k(),
-    'cf': XpConf('all.config.impl', 'cf').k(),
-    'hv': XpConf('all.hor_vert.impl', 'hv').k(),
-    'xy': XpConf('all.xy_dist.impl', 'xy').k(),
-    'rd': XpConf('all.radius.impl', 'rd').k(),
-    'pa': XpConf('all.parallel.impl', 'pa').k(),
-    'ly': XpConf('all.layout.gui', 'ly').k(),
-    'fl': XpConf('all.flags', 'fl').k(),
-    'eq': XpConf('all.equal', 'eq').k(),
-    'ev': XpConf('all.event', 'ev').k(),
-    'pr_edg': XpConf('all.edge', 'eg').k(),
-    'co_co': XpConf('all.consider_coin', 'cc').k(),
-    'co_bld': XpConf('all.co_build', 'cb').k(),
-    'cir': XpConf('all.circle', 'cr').k(),
-    'geo': XpConf('all.geo_list', 'ge').k(),
+    'co': XpConf('all.tab.coincident', prepend='co').k(),
+    'cs': XpConf('all.tab.constraint', prepend='cs').k(),
+    'hv': XpConf('all.tab.hor_vert', prepend='hv').k(),
+    'xy': XpConf('all.tab.xy_dist', prepend='xy').k(),
+    'rd': XpConf('all.tab.radius', prepend='rd').k(),
+    'pa': XpConf('all.tab.parallel', prepend='pa').k(),
+    'eq': XpConf('all.tab.equal', prepend='eq').k(),
+    'cf': XpConf('all.tab.config', prepend='cf').k(),
+    'go': XpConf('all.tab.geo', prepend='go').k(),
+
+    'tr': XpConf('all.thread', prepend='tr', thread_info=True).k(),
+    'ti': XpConf('all.q_thread', prepend='ti').k(),
+    'ly': XpConf('all.layout', prepend='ly').k(),
+    'ev': XpConf('all.notify.event', prepend='ev').k(),
+    'fl': XpConf('all.notify.flags', prepend='fl').k(),
     'flo': XpConf('all.flow').k(),
-    'ob_s': XpConf('all.observer.observer_sel', 'ob').k(),
-    'ob_g': XpConf('all.observer.observer_gui', 'ob').k(),
-    'ob_a': XpConf('all.observer.observer_app', 'ob').k()
+    'ob_s': XpConf('all.notify.observer.obs_sel', prepend='ob').k(),
+    'ob_g': XpConf('all.notify.observer.obs_gui', prepend='ob').k(),
+    'ob_a': XpConf('all.notify.observer.obs_app', prepend='ob').k()
 }
 
 _co = topics['co']
 _cs = topics['cs']
-_cf = topics['cf']
 _hv = topics['hv']
 _xy = topics['xy']
 _rd = topics['rd']
+_eq = topics['eq']
+_pa = topics['pa']
+_cf = topics['cf']
+_go = topics['go']
+
+_tr = topics['tr']
+_ti = topics['ti']
 _ly = topics['ly']
 _fl = topics['fl']
-_eq = topics['eq']
 _ev = topics['ev']
-_pa = topics['pa']
-
-_prn_edge = topics['pr_edg']
-_co_co = topics['co_co']
-_co_build = topics['co_bld']
-_cir = topics['cir']
-_geo = topics['geo']
 _flow = topics['flo']
 _ob_s = topics['ob_s']
 _ob_g = topics['ob_g']
@@ -378,21 +374,43 @@ _ob_a = topics['ob_a']
 
 xps(__name__)
 if __name__ == '__main__':
-    XpConf.topics.add('flow')
+    pass
+
+'''
+>>> import dis
+>>> add = lambda x, y: x + y
+>>> type(add)
+<class 'function'>
+>>> dis.dis(add)
+  1           0 LOAD_FAST                0 (x)
+              2 LOAD_FAST                1 (y)
+              4 BINARY_ADD
+              6 RETURN_VALUE
+>>> add
+
+def fullname(o):
+    # o.__module__ + "." + o.__class__.__qualname__ is an example in
+    # this context of H.L. Mencken's "neat, plausible, and wrong."
+    # Python makes no guarantees as to whether the __module__ special
+    # attribute is defined, so we take a more circumspect approach.
+    # Alas, the module name is explicitly excluded from __qualname__
+    # in Python 3.
+
+    print(inspect.signature(o))
+    for x in inspect.getmembers(o):
+        print(x)
+    module = o.__class__.__module__
+    print('o'.ljust(30), o)
+    print('o.__class__'.ljust(30), o.__class__)
+    print('o.__name__'.ljust(30), o.__name__)
+    if hasattr(o, '__module__'):
+        print('o.__module__'.ljust(30), o.__module__)
+    print('o.__class__.__module__'.ljust(30), o.__class__.__module__)
+    print('o.__class__.__name__'.ljust(30), o.__class__.__name__)
 
 
-    @flow
-    def addition_func(x):
-        return x + x
-
-
-    c = XpConf('all.test', 'ooo', True, '*', 'xxx')
-    XpConf.topics.add('test')
-    XpConf.topics.add('')
-
-    xp('hi:' + 'ho')
-    xp('test', 'hi:' + 'ho', **c.k())
-    c.std_err = False
-    xp('test', 'hi:' + 'ho', **c.k(4))
-
-    addition_func(6)
+    if module is None or module == str.__class__.__module__:
+        return o.__class__.__name__  # Avoid reporting __builtin__
+    else:
+        return module + '.' + o.__class__.__name__
+'''

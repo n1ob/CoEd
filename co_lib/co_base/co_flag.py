@@ -1,43 +1,14 @@
 import functools
 from enum import Flag, auto
+from typing import NamedTuple
 
-from PySide2.QtCore import QObject, Signal
-
-from co_logger import _fl, xp, xps
-
-
-# class DataChgEvent(QObject):
-#     hv_edg_chg = Signal(str)
-#     xy_edg_chg = Signal(str)
-#     coin_pts_chg = Signal(str)
-#     cons_chg = Signal(str)
-#     rad_chg = Signal(str)
-#     eq_chg = Signal(str)
-
-
-# class ObserverEvent(QObject):
-#     add_selection = Signal(object, object, object, object)
-#     doc_recomputed = Signal(object)
-#     obj_recomputed = Signal(object)
-#     open_transact = Signal(object, str)
-#     commit_transact = Signal(object)
-
-# so = Event()
-# so.cons_chg.connect(say_some_words)
-# so.cons_chg.emit("test")
-
-'''
-Note that filter
-(function, iterable) is equivalent to the generator expression 
-(item for item in iterable if function(item)) if function is not None and 
-(item for item in iterable if item) if function is None.'''
+from .co_logger import _fl, xp, xps
 
 
 def dirty(_func=None, *, flag=None):
     def decorator_dirty(func):
         @functools.wraps(func)
         def wrapper_dirty(*args, **kwargs):
-            # cls = get_class_that_defined_method(args[0].all)
             nam = func.__name__.ljust(8)
             arg = [str(a) for a in args]
             obj = func(*args, **kwargs)
@@ -47,9 +18,7 @@ def dirty(_func=None, *, flag=None):
             else:
                 xp(f"{nam}: {arg} -> [ {res} ]", **_fl)
             return obj
-
         return wrapper_dirty
-
     if _func is None:
         return decorator_dirty
     else:
@@ -109,6 +78,13 @@ class Cs(Flag):
     T = auto()
     TP = auto()
     V = auto()
+
+
+class ConsTrans(NamedTuple):
+    co_idx: int
+    type_id: str
+    sub_type: Cs
+    fmt: str
 
 
 class Flags:
@@ -171,7 +147,6 @@ class Flags:
 
 xps(__name__)
 if __name__ == '__main__':
-    # todo clean up test code
 
     for x, y in Cs.__members__.items():
         print(x, y)
@@ -203,29 +178,3 @@ if __name__ == '__main__':
     print((Cs.F | Cs.S) in c2)
     print((Cs.F | Cs.FP) in c2)
 
-
-    # for x, y in Dirty.__members__.items():
-    #     print(x, y)
-
-    # g = seq_gen()
-    # print('----------')
-    # f = Flags(Dirty)
-    # f.all()
-    # print(next(g), f)
-    # f.invert()
-    # print(next(g), f)
-    # f.set(Dirty.COIN_POINTS)
-    # print(next(g), f)
-    # f.set(Dirty.HV_EDGES)
-    # print(next(g), f)
-    # f.reset(Dirty.COIN_POINTS)
-    # # print(next(g), f)
-    # f.all_but(Dirty.XY_EDGES)
-    # # print(next(g), f)
-    # f.toggle(Dirty.CONSTRAINTS)
-    # # print(next(g), f)
-    # f.has(Dirty.CONSTRAINTS)
-    # f.all_but(Dirty.HV_EDGES)
-    # # print(next(g), f)
-    # f.none_but(Dirty.HV_EDGES | Dirty.CONSTRAINTS)
-    # # print(next(g), f)

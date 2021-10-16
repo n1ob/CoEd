@@ -1,18 +1,17 @@
 from pathlib import Path
 
 from PySide2 import QtCore
-from PySide2.QtCore import QObject, Qt, Slot
-from PySide2.QtGui import QFont, QPalette, QColor
+from PySide2.QtCore import Qt, Slot
+from PySide2.QtGui import QFont, QColor
 from PySide2.QtWidgets import QWidget, QBoxLayout, QComboBox, QPlainTextEdit, QFontComboBox, QSpinBox, QPushButton, \
     QVBoxLayout, QHBoxLayout, QLineEdit, QFileDialog, QMessageBox, QLabel, QCheckBox
-import FreeCAD as App
-import co_gui
-import co_impl
-import co_logger
-from co_cmn import contrast_color, lumi, split_rgb, complement_color
-from co_config import CfgFonts, CfgBasics, CfgColors, Cfg
-from co_logger import xp, _ev, flow, _ly, _cf
-from co_style import XMLHighlighter
+
+from .. import co_impl, co_gui
+from ..co_base import co_logger
+from ..co_base.co_cmn import contrast_color, lumi, split_rgb, complement_color
+from ..co_base.co_config import CfgFonts, CfgBasics, CfgColors, Cfg
+from ..co_base.co_logger import xp, flow, _ly, _cf
+from ..co_base.co_style import XMLHighlighter
 
 _QL = QBoxLayout
 
@@ -28,17 +27,16 @@ class CfgGui:
         self.cfg_color.color_changed.connect(self.on_color_changed)
         self.cfg_log_dir = self.cfg_basic.get(CfgBasics.LOG_DIR)
         if self.cfg_log_dir is None:
-            self.cfg_log_path = self.cfg_basic.log_name_get()
+            self.cfg_log_path = self.cfg_basic.log_path_default_get()
         else:
             self.cfg_log_path = str(Path(self.cfg_log_dir, self.cfg_basic.log_name_get()))
         co_logger.xp_worker.log_path_set(self.cfg_log_path)
-        # log_path_set(self.cfg_log_path)
-        # co_logger.xp_thread_event.set()
-        self.base.cfg_blubber = self.cfg_basic.get(self.cfg_basic.SHOW_ONLY_VALID)
+        self.base.cfg_only_valid = self.cfg_basic.get(CfgBasics.SHOW_ONLY_VALID)
 
         self.base.tbl_font = self.cfg_fnts.font_get(CfgFonts.FONT_TABLE)
         self.base.geo_edt_font = self.cfg_fnts.font_get(CfgFonts.FONT_GEO_EDT)
         self.base.cfg_edt_font = self.cfg_fnts.font_get(CfgFonts.FONT_CFG_EDT)
+        self.base.construct_color = self.cfg_color.color_get(CfgColors.COLOR_CONSTRUCT)
 
         self.cfg_filter_cmb = QComboBox()
         self.cfg_txt_edt = QPlainTextEdit()
@@ -58,9 +56,7 @@ class CfgGui:
         self.cfg_ln_edt_col_5 = QLineEdit()
         self.cfg_ln_edt_col_6 = QLineEdit()
         self.cfg_ln_edt_sav = [''] * 6
-
         self.cfg_lbl_log = QLabel('Log Dir')
-
         self.cfg_log_ln_edt = QLineEdit()
         self.cfg_btn_log_file_dlg = QPushButton('...')
         self.tab_cfg.setLayout(self.cfg_lay_get())
@@ -72,7 +68,6 @@ class CfgGui:
         self.cfg_filter_cmb.setMaximumWidth(200)
         self.cfg_txt_edt.setFont(self.base.cfg_edt_font)
         self.cfg_txt_edt.setLineWrapMode(QPlainTextEdit.NoWrap)
-        # self.cfg_txt_edt.highlighter = XMLHighlighter(self.cfg_txt_edt.document())
         self.cfg_txt_edt.setPlainText(self.impl.geo_xml_get())
         self.cfg_font_box.setCurrentFont(self.base.cfg_edt_font)
         self.cfg_font_box.currentFontChanged.connect(self.on_fnt_box_chg)
@@ -92,7 +87,7 @@ class CfgGui:
             self.cfg_log_ln_edt.setText(self.cfg_log_dir)
         self.cfg_log_ln_edt.editingFinished.connect(self.on_log_edt_finish)
         self.cfg_chk_box_sel.setText('show only possible')
-        self.cfg_chk_box_sel.setChecked(self.base.cfg_blubber)
+        self.cfg_chk_box_sel.setChecked(self.base.cfg_only_valid)
         self.cfg_chk_box_sel.stateChanged.connect(self.on_chk_box_sel_chg)
 
         self.cfg_ln_edt_col_1.setInputMask('\#HHHHHH;_')
@@ -153,7 +148,8 @@ class CfgGui:
     @Slot(int)
     def on_chk_box_sel_chg(self, state: int):
         xp('on_chk_box_sel_chg', **_cf)
-        self.base.cfg_blubber = state
+        self.base.cfg_only_valid = state
+        self.cfg_basic.set(CfgBasics.SHOW_ONLY_VALID, self.base.cfg_only_valid)
 
     @flow
     @Slot(str)
@@ -235,7 +231,7 @@ class CfgGui:
         self.cfg_log_ln_edt.setText(dir_)
         self.cfg_log_dir = dir_
         self.cfg_basic.set(CfgBasics.LOG_DIR, dir_)
-        pth = Path(dir_, self.cfg_basic.log_name_get())
+        pth = Path(dir_, self.cfg_basic.log_name_get)
         self.cfg_log_path = str(pth)
         xp(pth, **_cf)
 

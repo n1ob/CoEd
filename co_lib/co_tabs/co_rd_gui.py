@@ -1,36 +1,32 @@
+from threading import Lock
 from typing import List
-
-from PySide2.QtCore import Slot, QItemSelectionModel, QModelIndex, Qt
-from PySide2.QtWidgets import QBoxLayout, QWidget, QGroupBox, QCheckBox, QDoubleSpinBox, QPushButton, QTableWidget, \
-    QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView
 
 import FreeCAD as App
 import FreeCADGui as Gui
+from PySide2.QtCore import Slot, QItemSelectionModel, QModelIndex, Qt
+from PySide2.QtGui import QBrush
+from PySide2.QtWidgets import QBoxLayout, QWidget, QGroupBox, QCheckBox, QDoubleSpinBox, QPushButton, QTableWidget, \
+    QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView
 
-import co_gui
-import co_impl
-from co_cmn import fmt_vec
-from co_logger import flow, xp, _rd, _ev, xps
-from co_observer import observer_event_provider_get
-from co_rd import RdCircles, RdCircle
+from .co_rd import RdCircles, RdCircle
+from .. import co_impl, co_gui
+from ..co_base.co_cmn import wait_cursor, Controller, Worker
+from ..co_base.co_logger import flow, xp, _rd, _ev, xps
+from ..co_base.co_observer import observer_block
 
 _QL = QBoxLayout
 
 
 class RdGui:
-
     def __init__(self, base):
         self.base: co_gui.CoEdGui = base
         self.impl: co_impl.CoEd = self.base.base
         self.rd: RdCircles = self.impl.rd_circles
         self.tab_rd = QWidget(None)
-        # xp('impl.ev.rad_chg.connect(self.on_rd_chg)', **_ev)
-        # self.impl.ev.rad_chg.connect(self.on_rd_chg)
         xp('rd.created.connect', **_ev)
         self.rd.created.connect(self.on_rd_create)
         xp('rd.creation_done.connect', **_ev)
         self.rd.creation_done.connect(self.on_rd_create_done)
-
         self.rad_grp_box: QGroupBox = QGroupBox(None)
         self.rad_chk_box: QCheckBox = QCheckBox()
         self.rad_dbl_sp_box: QDoubleSpinBox = QDoubleSpinBox()
@@ -38,6 +34,8 @@ class RdGui:
         self.rad_btn_create.setDisabled(True)
         self.rad_tbl_wid: QTableWidget = QTableWidget()
         self.tab_rd.setLayout(self.lay_get())
+        self.ctrl_up = None
+        self.ctrl_lock = Lock()
         self.update_table()
 
     @flow
@@ -57,11 +55,6 @@ class RdGui:
                [QHBoxLayout(), self.rad_chk_box, self.rad_dbl_sp_box, _QL.addStretch, self.rad_btn_create],
                self.rad_tbl_wid]]
         return self.base.lay_get(li)
-
-    # @flow
-    # @Slot(str)
-    # def on_rd_chg(self, words):
-    #     xp('rad changed', words, **_ev)
 
     @flow
     @Slot(int, float)
@@ -98,85 +91,92 @@ class RdGui:
         table_widget = QTableWidget(obj)
         table_widget.setColumnCount(3)
         w_item = QTableWidgetItem(u"Circle")
-        table_widget.setHorizontalHeaderItem(0, w_item)
-        w_item = QTableWidgetItem(u"Radius")
         table_widget.setHorizontalHeaderItem(1, w_item)
+        w_item = QTableWidgetItem(u"Radius")
+        table_widget.setHorizontalHeaderItem(2, w_item)
         self.base.prep_table(table_widget)
         return table_widget
 
     @flow
     def create(self):
-        rad = None
-        if self.rad_chk_box.isChecked():
-            rad = self.rd.radius
-        mod: QItemSelectionModel = self.rad_tbl_wid.selectionModel()
-        rows: List[QModelIndex] = mod.selectedRows(2)
-        create_list: List[RdCircle] = [x.data() for x in rows]
-        for idx in rows:
-            xp(idx.row(), ':', idx.data(), **_rd)
-        self.rd.dia_create(create_list, rad)
+        with wait_cursor():
+            rad = None
+            if self.rad_chk_box.isChecked():
+                rad = self.rd.radius
+            mod: QItemSelectionModel = self.rad_tbl_wid.selectionModel()
+            rows: List[QModelIndex] = mod.selectedRows(0)
+            create_list: List[RdCircle] = [x.data() for x in rows]
+            for idx in rows:
+                xp(idx.row(), ':', idx.data(), **_rd)
+            self.rd.dia_create(create_list, rad)
         self.update_table()
 
     @flow
-    def update_table(self):
-        self.rad_tbl_wid.setUpdatesEnabled(False)
-        # self.rad_tbl_wid.setEnabled(False)
-        # self.rad_tbl_wid.clearContents()
-        self.rad_tbl_wid.setRowCount(0)
-        __sorting_enabled = self.rad_tbl_wid.isSortingEnabled()
-        self.rad_tbl_wid.setSortingEnabled(False)
+    def task_up(self, hv):
         rad_lst, dia_lst = self.rd.cons_get()
         cir_list: List[RdCircle] = self.rd.circles
-        xp('->', cir_list, **_rd)
-        for item in cir_list:
-            cs = f'---'
-            typ = 'cir' if item.type_id == 'Part::GeomCircle' else 'arc'
-            # typ2 = ('arc', 'cir')[item.type_id == 'Part::GeomCircle']
-            if item.geo_idx in rad_lst:
-                if self.base.cfg_blubber:
-                    continue
-                xp('rad cs', item.geo_idx, **_rd)
-                cs = f'rad'
-            if item.geo_idx in dia_lst:
-                if self.base.cfg_blubber:
-                    continue
-                xp('dia cs', item.geo_idx, **_rd)
-                cs = f'dia'
-            self.rad_tbl_wid.insertRow(0)
-            fmt = f"{fmt_vec(item.center)}"
-            self.rad_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
-            fmt2 = f"Id {item.geo_idx} r {item.radius:.1f}\n cs {cs} {typ}"
-            w_item = QTableWidgetItem(fmt2)
-            w_item.setTextAlignment(Qt.AlignCenter)
-            self.rad_tbl_wid.setItem(0, 1, w_item)
-            w_item = QTableWidgetItem()
-            w_item.setData(Qt.DisplayRole, item)
-            xp('col 3', item.geo_idx, **_rd)
-            self.rad_tbl_wid.setItem(0, 2, w_item)
-        self.rad_tbl_wid.setSortingEnabled(__sorting_enabled)
-        hh: QHeaderView = self.rad_tbl_wid.horizontalHeader()
-        hh.resizeSections(QHeaderView.ResizeToContents)
-        # vh: QHeaderView = self.cons_tbl_wid.verticalHeader()
-        # self.rad_tbl_wid.setEnabled(True)
-        self.rad_tbl_wid.setUpdatesEnabled(True)
+        return cir_list, rad_lst, dia_lst
+
+    @flow(short=True)
+    def on_result_up(self, result):
+        with self.ctrl_lock:
+            self.rad_tbl_wid.setUpdatesEnabled(False)
+            self.rad_tbl_wid.setRowCount(0)
+            __sorting_enabled = self.rad_tbl_wid.isSortingEnabled()
+            self.rad_tbl_wid.setSortingEnabled(False)
+            cir_list, rad_lst, dia_lst = result
+            xp('->', cir_list, **_rd)
+            for item in cir_list:
+                cs = f'---'
+                typ = 'cir' if item.type_id == 'Part::GeomCircle' else 'arc'
+                if item.geo_idx in rad_lst:
+                    if self.base.cfg_only_valid:
+                        continue
+                    xp('rad cs', item.geo_idx, **_rd)
+                    cs = f'rad'
+                if item.geo_idx in dia_lst:
+                    if self.base.cfg_only_valid:
+                        continue
+                    xp('dia cs', item.geo_idx, **_rd)
+                    cs = f'dia'
+                self.rad_tbl_wid.insertRow(0)
+                w_item = QTableWidgetItem()
+                w_item.setData(Qt.DisplayRole, item)
+                xp('col 3', item.geo_idx, **_rd)
+                self.rad_tbl_wid.setItem(0, 0, w_item)
+                w_item = QTableWidgetItem(f'Edge{item.geo_idx + 1}')
+                if item.construct:
+                    w_item.setForeground(QBrush(self.base.construct_color))
+                self.rad_tbl_wid.setItem(0, 1, QTableWidgetItem(w_item))
+                fmt = f"r {item.radius:.1f} cs {cs} {typ}"
+                w_item = QTableWidgetItem(fmt)
+                if self.impl.sketch.getConstruction(item.geo_idx):
+                    w_item.setForeground(QBrush(self.base.construct_color))
+                w_item.setTextAlignment(Qt.AlignCenter)
+                self.rad_tbl_wid.setItem(0, 2, w_item)
+            self.rad_tbl_wid.setSortingEnabled(__sorting_enabled)
+            hh: QHeaderView = self.rad_tbl_wid.horizontalHeader()
+            hh.resizeSections(QHeaderView.ResizeToContents)
+            self.rad_tbl_wid.setUpdatesEnabled(True)
+
+    @flow
+    def update_table(self):
+        self.ctrl_up = Controller(Worker(self.task_up, self.rd), self.on_result_up, name='Radius')
 
     @flow
     def selected(self):
-        indexes: List[QModelIndex] = self.rad_tbl_wid.selectionModel().selectedRows(2)
+        indexes: List[QModelIndex] = self.rad_tbl_wid.selectionModel().selectedRows(0)
         rows: List = [x.row() for x in sorted(indexes)]
         xp(f'selected: {rows}', **_rd)
         if len(rows) == 0:
             self.rad_btn_create.setDisabled(True)
         else:
             self.rad_btn_create.setDisabled(False)
-
         doc_name = App.activeDocument().Name
-        observer_event_provider_get().blockSignals(True)
-        Gui.Selection.clearSelection(doc_name, True)
-        observer_event_provider_get().blockSignals(False)
+        with observer_block():
+            Gui.Selection.clearSelection(doc_name, True)
         ed_info = Gui.ActiveDocument.InEditInfo
         sk_name = ed_info[0].Name
-
         for item in indexes:
             rad: RdCircle = item.data()
             xp(f'row: {str(item.row())} idx: {rad.geo_idx} cons: {rad}', **_rd)

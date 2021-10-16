@@ -7,21 +7,21 @@ import Part
 import Sketcher
 from PySide2.QtCore import Signal, QObject
 
-import co_cs
-import co_impl
-from co_cmn import fmt_vec
-from co_flag import Dirty
-from co_logger import flow, xp, _hv, xps, _ev, Profile
+from . import co_cs
+from .. import co_impl
+from ..co_base.co_cmn import fmt_vec
+from ..co_base.co_flag import Dirty
+from ..co_base.co_logger import flow, xp, _hv, xps, _ev, Profile
 
 
 class HvEdge:
-
-    def __init__(self, geo_idx: int, y_angel: float, start: App.Vector, end: App.Vector):
+    def __init__(self, geo_idx: int, y_angel: float, start: App.Vector, end: App.Vector, construct: bool):
         self.geo_idx = geo_idx
         self.pt_start: App.Vector = start
         self.pt_end: App.Vector = end
         self.x_angel: float = 90 - y_angel
         self.y_angel: float = y_angel
+        self.construct: bool = construct
 
     def __str__(self):
         return f"GeoIdx {self.geo_idx}, Start ({fmt_vec(self.pt_start)} End ({fmt_vec(self.pt_end)} " \
@@ -38,7 +38,6 @@ class HvEdge:
 
 
 class HvEdges(QObject):
-
     created = Signal(str, int)
     creation_done = Signal()
 
@@ -48,7 +47,7 @@ class HvEdges(QObject):
         self.__tol_init = False
         self.__angle_init = False
         self.base: co_impl.CoEd = base
-        self.tolerance: float = 0.1
+        self.tolerance: float = 1.0
         self.angles: List[HvEdge] = list()
         self.tolerances: List[HvEdge] = list()
         self.__init = True
@@ -68,10 +67,8 @@ class HvEdges(QObject):
         if not self.__tol_init:
             self.__tol_init = True
             self.tolerances_create()
-
         if self.base.flags.has(Dirty.HV_EDGES):
             self.tolerances_create()
-
         return self._tolerance_lst
 
     @tolerances.setter
@@ -84,18 +81,13 @@ class HvEdges(QObject):
             if not self.__angle_init:
                 self.__angle_init = True
                 self.angles_create()
-
             if self.base.flags.has(Dirty.HV_EDGES):
                 self.angles_create()
-
         return self._angles
 
     @angles.setter
     def angles(self, value):
         self._angles = value
-
-    # def hv_edges_get_list(self) -> List[HvEdge]:
-    #     pass
 
     @staticmethod
     def __ge(start: App.Vector, end: App.Vector) -> float:
@@ -135,7 +127,8 @@ class HvEdges(QObject):
             idx, line = geo_lst[x]
             line: Part.LineSegment
             y_angle: float = self.__alpha(App.Vector(line.StartPoint), App.Vector(line.EndPoint))
-            edg = HvEdge(idx, y_angle, App.Vector(line.StartPoint), App.Vector(line.EndPoint))
+            edg = HvEdge(idx, y_angle, App.Vector(line.StartPoint), App.Vector(line.EndPoint), self.base.sketch.getConstruction(idx))
+            xp(f'HvEdge: {idx} {y_angle:.2f} {fmt_vec(App.Vector(line.StartPoint))} {fmt_vec(App.Vector(line.EndPoint))} {self.base.sketch.getConstruction(idx)}')
             self._angles.append(edg)
         self._angles.sort(key=attrgetter('y_angel'))
         self.base.flags.reset(Dirty.HV_EDGES)
@@ -157,33 +150,26 @@ class HvEdges(QObject):
                 break
         self.log_tol()
 
-    # @flow
-    # def filter_lst(self, cs: Set[int]):
-    #     res: List[HvEdge] = list()
-    #     for edg in self.tolerance_lst:
-    #         if edg.geo_idx not in cs:
-    #             res.append(edg)
-    #     return res
-
     @flow
     def create(self, edge_lst: List[HvEdge]):
         doc: App.Document = App.ActiveDocument
+        con_list = []
         for edge in edge_lst:
             if edge.x_angel <= self.tolerance:
                 con = Sketcher.Constraint('Horizontal', edge.geo_idx)
-                doc.openTransaction('coed: Horizontal constraint')
-                self.base.sketch.addConstraint(con)
-                doc.commitTransaction()
+                con_list.append(con)
                 xp('created.emit: Horizontal', edge.geo_idx, **_ev)
                 self.created.emit('Horizontal', edge.geo_idx)
                 continue
             if edge.y_angel <= self.tolerance:
                 con = Sketcher.Constraint('Vertical', edge.geo_idx)
-                doc.openTransaction('coed: Vertical constraint')
-                self.base.sketch.addConstraint(con)
-                doc.commitTransaction()
+                con_list.append(con)
                 xp('created.emit: Vertical', edge.geo_idx, **_ev)
                 self.created.emit('Vertical', edge.geo_idx)
+        doc.openTransaction('coed: Horizontal/Vertical constraint')
+        self.base.sketch.addConstraint(con_list)
+        doc.commitTransaction()
+
         sk: Sketcher.SketchObject = self.base.sketch
         sk.addProperty('App::PropertyString', 'coed')
         sk.coed = 'hv_recompute'
@@ -192,8 +178,6 @@ class HvEdges(QObject):
         doc.commitTransaction()
         self.base.flags.set(Dirty.HV_EDGES)
         self.base.flags.set(Dirty.CONSTRAINTS)
-        # xp('hv_edg_chg.emit', **_ev)
-        # self.base.ev.hv_edg_chg.emit('hv create finish')
         xp('creation_done.emit', **_ev)
         self.creation_done.emit()
 

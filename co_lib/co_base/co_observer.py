@@ -1,39 +1,10 @@
-from typing import Set
+from contextlib import contextmanager
 
-import FreeCADGui as Gui
 import FreeCAD as App
-import Part
+import FreeCADGui as Gui
 from PySide2.QtCore import Signal, QObject
 
-from co_cmn import fmt_vec, seq_gen
-from co_logger import xp, _ob_a, _ob_g, _ob_s, flow, xps
-
-
-def log_some_stuff(obj, prop):
-    if obj.TypeId == 'Sketcher::SketchObject':
-        if prop == 'Geometry':
-            xps('Geometry', **_ob_a)
-            for idx, item in enumerate(obj.Geometry):
-                if item.TypeId == 'Part::GeomLineSegment':
-                    line: Part.LineSegment = item
-                    xp('idx:', idx, 'type_id:', item.TypeId, 'start:',
-                       fmt_vec(App.Vector(line.StartPoint)), 'end:', fmt_vec(App.Vector(line.EndPoint)), **_ob_a)
-                elif item.TypeId == 'Part::GeomCircle':
-                    cir: Part.Circle = item
-                    xp(f'idx: {idx} type_id: {cir.TypeId} center: {fmt_vec(App.Vector(cir.Center))} '
-                       f'radius: {cir.Radius}', **_ob_a)
-                else:
-                    xp('idx:', idx, 'type_id:', item.TypeId, 'item:', item, **_ob_a)
-        if prop == 'Constraints':
-            xps('Constraints', **_ob_a)
-            for idx, item in enumerate(obj.Constraints):
-                xp('idx:', idx, 'type_id:', item.TypeId, 'item:', item, **_ob_a)
-        if prop == 'FullyConstrained':
-            xps('FullyConstrained', **_ob_a)
-            xp('bool:', obj.FullyConstrained, **_ob_a)
-        if prop == 'Shape':
-            xps('Shape', **_ob_a)
-            xp(obj.Shape, **_ob_a)
+from .co_logger import xp, _ob_a, _ob_g, _ob_s, flow, xps, seq_gen
 
 
 class EventProvider(QObject):
@@ -42,7 +13,10 @@ class EventProvider(QObject):
     doc_recomputed = Signal(object)
     obj_recomputed = Signal(object)
     open_transact = Signal(object, str)
-    commit_transact = Signal(object)
+    commit_transact = Signal(object, str)
+    in_edit = Signal(object)
+    reset_edit = Signal(object)
+    undo_doc = Signal(object)
 
 
 __evo = EventProvider()
@@ -51,6 +25,15 @@ __evo = EventProvider()
 # need a single instance
 def observer_event_provider_get() -> EventProvider:
     return __evo
+
+
+@contextmanager
+def observer_block():
+    observer_event_provider_get().blockSignals(True)
+    try:
+        yield
+    finally:
+        observer_event_provider_get().blockSignals(False)
 
 
 # noinspection PyPep8Naming,PyMethodMayBeStatic
@@ -76,24 +59,49 @@ class AppDocumentObserver(object):
 
     def slotUndoDocument(self, doc):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotUndoDocument', doc, **_ob_a)
-
-    def slotRedoDocument(self, doc):
-        xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotRedoDocument', doc, **_ob_a)
-
-    def slotOpenTransaction(self, doc, name):
-        xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotOpenTransaction', doc, name, **_ob_a)
         xp('TypeId', doc.TypeId, **_ob_a)
         if doc.TypeId == 'App::Document':
             doc: App.Document
             xp(f'Objects {doc.Objects}', **_ob_a)
             xp(f'ActiveObject {doc.ActiveObject}', **_ob_a)
+            if doc.ActiveObject is None:
+                xp('ActiveObject is None')
+                return
             if doc.ActiveObject.TypeId == 'Sketcher::SketchObject':
+                observer_event_provider_get().undo_doc.emit(doc)
+
+    def slotRedoDocument(self, doc):
+        xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotRedoDocument', doc, **_ob_a)
+
+    __trans_name = ''
+
+    def slotOpenTransaction(self, doc, name):
+        xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotOpenTransaction', doc, name, **_ob_a)
+        AppDocumentObserver.__trans_name = name
+        if name.startswith('Create a new sketch'):
+            xp('ignore Create a new sketch', **_ob_a)
+            return
+        xp('TypeId', doc.TypeId, **_ob_a)
+        if doc.TypeId == 'App::Document':
+            xp(f'Objects: {doc.Objects} ActiveObject: {doc.ActiveObject}', **_ob_a)
+            if doc.ActiveObject and (doc.ActiveObject.TypeId == 'Sketcher::SketchObject'):
                 observer_event_provider_get().open_transact.emit(doc, name)
+                pass
 
     def slotCommitTransaction(self, doc):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotCommitTransaction', doc, **_ob_a)
+        name = AppDocumentObserver.__trans_name
+        xp('received name:', name)
+        if name.startswith('Create a new sketch'):
+            xp('ignore Create a new sketch', **_ob_a)
+            return
         doc: App.Document
-        xp(doc.TypeId, **_ob_a)
+        xp('TypeId', doc.TypeId, **_ob_a)
+        if doc.TypeId == 'App::Document':
+            xp(f'Objects: {doc.Objects} ActiveObject: {doc.ActiveObject}', **_ob_a)
+            if doc.ActiveObject and (doc.ActiveObject.TypeId == 'Sketcher::SketchObject'):
+                observer_event_provider_get().commit_transact.emit(doc, name)
+                pass
 
     def slotAbortTransaction(self, doc):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotAbortTransaction', doc, **_ob_a)
@@ -157,34 +165,44 @@ class AppDocumentObserver(object):
 class GuiDocumentObserver(object):
 
     def slotCreatedDocument(self, doc):
-        xp('GuiDocumentObserver slotCreatedDocument', doc, **_ob_g)
+        xp(f'{next(GuiDocumentObserver.seq):>3}', 'GuiDocumentObserver slotCreatedDocument', doc, **_ob_g)
 
     def slotDeletedDocument(self, doc):
-        xp('GuiDocumentObserver slotDeletedDocument', doc, **_ob_g)
+        xp(f'{next(GuiDocumentObserver.seq):>3}', 'GuiDocumentObserver slotDeletedDocument', doc, **_ob_g)
 
     def slotRelabelDocument(self, doc):
-        xp('GuiDocumentObserver slotRelabelDocument', doc, **_ob_g)
+        xp(f'{next(GuiDocumentObserver.seq):>3}', 'GuiDocumentObserver slotRelabelDocument', doc, **_ob_g)
 
     def slotRenameDocument(self, doc):
-        xp('GuiDocumentObserver slotRenameDocument', doc, **_ob_g)
+        xp(f'{next(GuiDocumentObserver.seq):>3}', 'GuiDocumentObserver slotRenameDocument', doc, **_ob_g)
 
     def slotActivateDocument(self, doc):
-        xp('GuiDocumentObserver slotActivateDocument', doc, **_ob_g)
+        xp(f'{next(GuiDocumentObserver.seq):>3}', 'GuiDocumentObserver slotActivateDocument', doc, **_ob_g)
 
     def slotCreatedObject(self, obj):
-        xp('GuiDocumentObserver slotCreatedObject', obj, **_ob_g)
+        xp(f'{next(GuiDocumentObserver.seq):>3}', 'GuiDocumentObserver slotCreatedObject', obj, **_ob_g)
 
     def slotDeletedObject(self, obj):
-        xp('GuiDocumentObserver slotDeletedObject', obj, **_ob_g)
+        xp(f'{next(GuiDocumentObserver.seq):>3}', 'GuiDocumentObserver slotDeletedObject', obj, **_ob_g)
 
     def slotChangedObject(self, obj, prop):
-        xp('GuiDocumentObserver slotChangedObject', obj, prop, **_ob_g)
+        xp(f'{next(GuiDocumentObserver.seq):>3}', 'GuiDocumentObserver slotChangedObject', obj, prop, **_ob_g)
 
     def slotInEdit(self, obj):
-        xp('GuiDocumentObserver slotInEdit', obj, **_ob_g)
+        xp(f'{next(GuiDocumentObserver.seq):>3}', 'GuiDocumentObserver slotInEdit', obj, **_ob_g)
+        observer_event_provider_get().in_edit.emit(obj)
+        obj: Gui.ViewProvider
+        xp(f'slotInEdit {obj.TypeId}')
+        xp(f'{obj.Object}')
 
     def slotResetEdit(self, obj):
-        xp('GuiDocumentObserver slotResetEdit', obj, **_ob_g)
+        xp(f'{next(GuiDocumentObserver.seq):>3}', 'GuiDocumentObserver slotResetEdit', obj, **_ob_g)
+        observer_event_provider_get().reset_edit.emit(obj)
+        obj: Gui.ViewProvider
+        xp(f'slotResetEdit {obj.TypeId}')
+        xp(f'{obj.Object}')
+
+    seq = seq_gen(reset=1000)
 
 
 # noinspection PyPep8Naming,PyMethodMayBeStatic
@@ -222,6 +240,7 @@ class SelectionObserver:
         xp(f'{next(SelectionObserver.seq):>3}', 'SelectionObserver clearSelection', str(doc), **_ob_s)
         observer_event_provider_get().clear_selection.emit(doc)
 
+    # don't want spam
     # def setPreselection(self, doc, obj, sub):
     #     xp(f'{next(SelectionObserver.seq):>3}', 'SelectionObserver setPreselection',
     #        str(doc), 'obj:', str(obj), 'sub:', str(sub), **_ob_s)
@@ -273,13 +292,13 @@ def unregister_app_document_observer():
 
 def register():
     register_selection_observer()
-    # register_gui_document_observer()
+    register_gui_document_observer()
     register_app_document_observer()
 
 
 def unregister():
     unregister_selection_observer()
-    # unregister_gui_document_observer()
+    unregister_gui_document_observer()
     unregister_app_document_observer()
 
 

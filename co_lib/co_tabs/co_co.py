@@ -1,30 +1,17 @@
 from operator import attrgetter
-
-import FreeCAD as App
 from typing import List, NamedTuple, Tuple, Set
 
-import Sketcher
+import FreeCAD as App
 import Part
-
-# geo_lst = [()]
+import Sketcher
 from PySide2.QtCore import Signal, QObject
 
-import co_cs
-import co_impl
-from co_cmn import ConType, pt_typ_int
-from co_flag import Dirty, Flags
-from co_logger import flow, xp, xps, _co, _ev
-
-
-class GeoId(NamedTuple):
-    idx: int
-    typ: int
-
-    def __str__(self) -> str:
-        return f'({self.idx}.{self.typ})'
-
-    def __repr__(self) -> str:
-        return self.__str__()
+from . import co_cs
+from .. import co_impl
+from ..co_base.co_cmn import ConType
+from ..co_base.co_flag import Dirty, Flags
+from ..co_base.co_logger import flow, xp, xps, _co, _ev
+from ..co_tabs.co_xy import GeoId
 
 
 class GeoIdDist(NamedTuple):
@@ -39,13 +26,14 @@ class GeoIdDist(NamedTuple):
 
 
 class CoPoint:
-    def __init__(self, geo: GeoId, pt: App.Vector) -> None:
+    def __init__(self, geo: GeoId, pt: App.Vector, construct: bool) -> None:
         self.geo_id: GeoId = geo
         self.point: App.Vector = pt
         self.pt_distance_lst: List[GeoIdDist] = list()
+        self.construct: bool = construct
 
     def __str__(self) -> str:
-        return f'{self.geo_id} ({self.point.x:5.2f}, {self.point.y:5.2f}, {self.point.z:5.2f})  {self.pt_distance_lst}'
+        return f'{self.geo_id} ({self.point.x:5.2f}, {self.point.y:5.2f}, {self.point.z:5.2f}) {self.construct} {self.pt_distance_lst}'
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -116,7 +104,6 @@ class CoPoint:
 
 
 class CoPoints(QObject):
-
     created = Signal(tuple, tuple)
     creation_done = Signal()
 
@@ -126,7 +113,7 @@ class CoPoints(QObject):
         self.__tol_init = False
         self.__dist_init = False
         self.base: co_impl.CoEd = base
-        self.tolerance: float = 1.1
+        self.tolerance: float = 0.1
         self.distances: List[CoPoint] = list()
         self.tolerances: List[CoPoint] = list()
         self.__init = True
@@ -146,10 +133,8 @@ class CoPoints(QObject):
         if not self.__tol_init:
             self.__tol_init = True
             self.tolerances_create()
-
         if self.base.flags.has(Dirty.EQ_EDGES):
             self.tolerances_create()
-
         return self._tolerance_lst
 
     @tolerances.setter
@@ -161,10 +146,8 @@ class CoPoints(QObject):
         if not self.__dist_init:
             self.__dist_init = True
             self.distances_create()
-
         if self.base.flags.has(Dirty.EQ_EDGES):
             self.distances_create()
-
         return self._distance_lst
 
     @distances.setter
@@ -174,15 +157,13 @@ class CoPoints(QObject):
     @flow
     def distances_create(self):
         self._distance_lst.clear()
-        # filter for line segments
-
         geo_lst: List[Tuple[int, Part.LineSegment]] = [(idx, geo) for idx, geo
                                                        in enumerate(self.base.sketch.Geometry)
                                                        if geo.TypeId == 'Part::GeomLineSegment']
-
-        pt_lst = [CoPoint(GeoId(idx, 1), App.Vector(line.StartPoint)) for idx, line in geo_lst]
-        pt_lst += [CoPoint(GeoId(idx, 2), App.Vector(line.EndPoint)) for idx, line in geo_lst]
-
+        pt_lst = [CoPoint(GeoId(idx, 1), App.Vector(line.StartPoint), self.base.sketch.getConstruction(idx))
+                  for idx, line in geo_lst]
+        pt_lst += [CoPoint(GeoId(idx, 2), App.Vector(line.EndPoint), self.base.sketch.getConstruction(idx))
+                   for idx, line in geo_lst]
         pt_len = len(pt_lst)
         for y in range(pt_len):
             pt_y: CoPoint = pt_lst[y]
@@ -209,7 +190,7 @@ class CoPoints(QObject):
     def tolerances_create(self) -> None:
         self._tolerance_lst.clear()
         for item in self.distances:
-            a = CoPoint(GeoId(item.geo_id.idx, item.geo_id.typ), item.point)
+            a = CoPoint(GeoId(item.geo_id.idx, item.geo_id.typ), item.point, item.construct)
             a.pt_distance_lst = item.distances_get(self.tolerance)
             self._tolerance_lst.append(a)
         self.log_tol()
@@ -217,7 +198,6 @@ class CoPoints(QObject):
     @flow
     def cons_get(self) -> Set[Tuple[GeoId, GeoId]]:
         co_list: List[co_cs.Constraint] = self.base.cs.constraints
-        # co_list: List[co_cs.Constraint] = self.base.constraints_get_list()
         col: Set[Tuple[GeoId, GeoId]] = {
             (GeoId(x.first, x.first_pos), GeoId(x.second, x.second_pos))
             for x in co_list
@@ -231,6 +211,7 @@ class CoPoints(QObject):
         if len(co_pt_list) == 0:
             return
         s: Set[Tuple[GeoId, GeoId]] = set()
+        con_list = []
         for pt in co_pt_list:
             xp('pt', pt.pt_distance_lst, **_co)
             for dist in pt.pt_distance_lst:
@@ -239,13 +220,14 @@ class CoPoints(QObject):
                     xp('skip redundant', dist.geo_id, pt.geo_id, **_co)
                     continue
                 s.add((pt.geo_id, dist.geo_id))
-                con = Sketcher.Constraint('Coincident', pt.geo_id.idx, pt.geo_id.typ, dist.geo_id.idx,
-                                          dist.geo_id.typ)
-                doc.openTransaction('coed: Coincident constraint')
-                self.base.sketch.addConstraint(con)
-                doc.commitTransaction()
+                con_list.append(Sketcher.Constraint('Coincident', pt.geo_id.idx, pt.geo_id.typ, dist.geo_id.idx,
+                                                    dist.geo_id.typ))
                 xp('created.emit', pt.geo_id, dist.geo_id, **_ev)
                 self.created.emit((pt.geo_id.idx, pt.geo_id.typ), (dist.geo_id.idx, dist.geo_id.typ))
+        doc.openTransaction('coed: Coincident constraint')
+        self.base.sketch.addConstraint(con_list)
+        self.base.sketch.solve()
+        doc.commitTransaction()
         self.base.flags.all()
         sk: Sketcher.SketchObject = self.base.sketch
         sk.addProperty('App::PropertyString', 'coed')
@@ -253,8 +235,6 @@ class CoPoints(QObject):
         doc.openTransaction('coed: obj recompute')
         sk.recompute()
         doc.commitTransaction()
-        # xp('coin_pts_chg.emit', **_ev)
-        # self.base.ev.coin_pts_chg.emit('coin_create finish')
         xp('creation_done.emit', **_ev)
         self.creation_done.emit()
 
@@ -271,43 +251,4 @@ class CoPoints(QObject):
 
 xps(__name__)
 if __name__ == '__main__':
-    DOC = "Test"
-    SKETCH = "Sketch"
-
-
-    class A:
-        def __init__(self):
-            self.flags = Flags(Dirty)
-            self.flags.all()
-
-        def constraints_get_list(self):
-            return []
-
-
-    a = A()
-
-
-    def add_geo(o: object, b: bool = False):
-        App.getDocument(DOC).getObject(SKETCH).addGeometry(o, b)
-
-
-    App.newDocument(DOC)
-    App.setActiveDocument(DOC)
-    App.ActiveDocument = App.getDocument(DOC)
-    App.activeDocument().addObject('Sketcher::SketchObject', 'Sketch')
-    App.activeDocument().Sketch.Placement = App.Placement(App.Vector(0.000000, 0.000000, 0.000000),
-                                                          App.Rotation(0.000000, 0.000000, 0.000000, 1.000000))
-    App.activeDocument().Sketch.MapMode = "Deactivated"
-    ActiveSketch = App.getDocument(DOC).getObject('Sketch')
-    App.ActiveDocument.recompute()
-
-    add_geo(Part.LineSegment(App.Vector(-8.0, -5.0, 0.0), App.Vector(4.0, 7.0, 0.0)))
-    add_geo(Part.LineSegment(App.Vector(5.0, 7.0, 0.0), App.Vector(7.0, -8.0, 0.0)))
-    add_geo(Part.LineSegment(App.Vector(-8.0, -6.0, 0.0), App.Vector(7.0, -9.0, 0.0)))
-    add_geo(Part.LineSegment(App.Vector(4.0, 8.0, 0.0), App.Vector(20.0, 10.0, 0.0)))
-
-    co = CoPoints(a)
-    # co.dist_lst_create()
-    co.tolerances_create()
-
-    App.closeDocument(DOC)
+    pass

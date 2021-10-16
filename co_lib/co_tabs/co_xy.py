@@ -5,11 +5,11 @@ import Part
 import Sketcher
 from PySide2.QtCore import Signal, QObject
 
-import co_cs
-import co_impl
-from co_cmn import fmt_vec, pt_typ_str
-from co_flag import Dirty
-from co_logger import flow, xp, _xy, _ev, xps
+from . import co_cs
+from .. import co_impl
+from ..co_base.co_cmn import fmt_vec, pt_typ_str
+from ..co_base.co_flag import Dirty
+from ..co_base.co_logger import flow, xp, _xy, _ev, xps
 
 
 class GeoId(NamedTuple):
@@ -17,20 +17,20 @@ class GeoId(NamedTuple):
     typ: int
 
     def __str__(self) -> str:
-        return f'({self.idx}.{pt_typ_str(self.typ)})'
+        return f'({self.idx}.{pt_typ_str[self.typ]})'
 
     def __repr__(self) -> str:
         return f'({self.idx}.{self.typ})'
 
 
 class XyEdge:
-
-    def __init__(self, geo_idx: int, start: App.Vector, end: App.Vector, x: bool, y: bool):
+    def __init__(self, geo_idx: int, start: App.Vector, end: App.Vector, x: bool, y: bool, construct: bool):
         self.geo_idx = geo_idx
         self.start: App.Vector = start
         self.end: App.Vector = end
         self.has_x: bool = x
         self.has_y: bool = y
+        self.construct: bool = construct
 
     def __str__(self):
         return f"GeoIdx {self.geo_idx}, Start ({fmt_vec(self.start)} End ({fmt_vec(self.end)} x {self.has_x} " \
@@ -47,7 +47,6 @@ class XyEdge:
 
 
 class XyEdges(QObject):
-
     created = Signal(str, int, float)
     creation_done = Signal()
 
@@ -99,7 +98,7 @@ class XyEdges(QObject):
         for idx, line in geo_lst:
             line: Part.LineSegment
             ed: XyEdge = XyEdge(idx, App.Vector(line.StartPoint), App.Vector(line.EndPoint),
-                                ((idx, idx) in ex_x), ((idx, idx) in ex_y))
+                                ((idx, idx) in ex_x), ((idx, idx) in ex_y), self.base.sketch.getConstruction(idx))
             self._edges.append(ed)
         [xp(xy_edge, **_xy) for xy_edge in self._edges]
         self.base.flags.reset(Dirty.XY_EDGES)
@@ -108,26 +107,26 @@ class XyEdges(QObject):
     def dist_create(self, edg_list: List[XyEdge], x: bool, y: bool):
         doc: App.Document = App.ActiveDocument
         xp('geo_list', edg_list, **_xy)
+        con_list = []
         for edg in edg_list:
             idx = edg.geo_idx
             if (not edg.has_x) and x:
                 x1 = edg.start.x
                 x2 = edg.end.x
-                doc.openTransaction('coed: DistanceX constraint')
-                self.base.sketch.addConstraint(Sketcher.Constraint('DistanceX', idx, 1, idx, 2, (x2 - x1)))
-                doc.commitTransaction()
+                con_list.append(Sketcher.Constraint('DistanceX', idx, 1, idx, 2, (x2 - x1)))
                 xp(f'DistanceX created, geo_start ({idx}.1) geo_end ({idx}.2), {(x2 - x1)}', **_xy)
                 xp('created.emit: DistanceX', idx, (x2 - x1), **_ev)
                 self.created.emit('DistanceX', idx, (x2 - x1))
             if (not edg.has_y) and y:
                 y1 = edg.start.y
                 y2 = edg.end.y
-                doc.openTransaction('coed: DistanceY constraint')
-                self.base.sketch.addConstraint(Sketcher.Constraint('DistanceY', idx, 1, idx, 2, (y2 - y1)))
-                doc.commitTransaction()
+                con_list.append(Sketcher.Constraint('DistanceY', idx, 1, idx, 2, (y2 - y1)))
                 xp(f'DistanceY created, geo_start ({idx}.1) geo_end ({idx}.2), {(y2 - y1)}', **_xy)
                 xp('created.emit: DistanceY', idx, (y2 - y1), **_ev)
                 self.created.emit('DistanceY', idx, (y2 - y1))
+        doc.openTransaction('coed: DistanceX/DistanceX constraint')
+        self.base.sketch.addConstraint(con_list)
+        doc.commitTransaction()
 
         if len(edg_list) > 0:
             sk: Sketcher.SketchObject = self.base.sketch
@@ -138,8 +137,6 @@ class XyEdges(QObject):
             doc.commitTransaction()
             self.base.flags.set(Dirty.CONSTRAINTS)
             self.base.flags.set(Dirty.XY_EDGES)
-            # xp('xy_edg_chg.emit', **_ev)
-            # self.base.ev.xy_edg_chg.emit('xy create finish')
             xp('creation_done.emit', **_ev)
             self.creation_done.emit()
 

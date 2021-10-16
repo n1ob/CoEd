@@ -1,18 +1,15 @@
 from operator import attrgetter
 from typing import List, NamedTuple, Tuple, Set
 
-import Sketcher
 import FreeCAD as App
+import Sketcher
 from PySide2.QtCore import Signal, QObject
 
-import co_cs
-from co_cmn import ConType
-from co_flag import Dirty
-import co_impl
-
-# geo_lst: List[Tuple[int, float]] = [(0, 1.0), (2, 1.1), (4, 0.9), (6, 1.2), (7, 0.8),
-#                                     (8, 1.3), (9, 1.1)]
-from co_logger import xp, xps, flow, _eq, _ev
+from . import co_cs
+from .. import co_impl
+from ..co_base.co_cmn import ConType
+from ..co_base.co_flag import Dirty
+from ..co_base.co_logger import xp, xps, flow, _eq, _ev
 
 
 class GeoDiff(NamedTuple):
@@ -27,10 +24,11 @@ class GeoDiff(NamedTuple):
 
 
 class EqEdge:
-    def __init__(self, geo_idx, length) -> None:
+    def __init__(self, geo_idx: int, length: float, construct: bool) -> None:
         self.geo_idx: int = geo_idx
         self.length: float = length
         self.edg_differences: List[GeoDiff] = list()
+        self.construct: bool = construct
 
     def __str__(self) -> str:
         return f'geo: {self.geo_idx} length: {self.length:.2f} diff: {self.edg_differences}'
@@ -131,10 +129,8 @@ class EqEdges(QObject):
         if not self.__tol_init:
             self.__tol_init = True
             self.tolerances_create()
-
         if self.base.flags.has(Dirty.EQ_EDGES):
             self.tolerances_create()
-
         return self._tolerance_lst
 
     @tolerances.setter
@@ -146,10 +142,8 @@ class EqEdges(QObject):
         if not self.__diff_init:
             self.__diff_init = True
             self.differences_create()
-
         if self.base.flags.has(Dirty.EQ_EDGES):
             self.differences_create()
-
         return self._differences
 
     @differences.setter
@@ -159,18 +153,18 @@ class EqEdges(QObject):
     @flow
     def differences_create(self) -> None:
         self._differences.clear()
-        geo_lst = [(idx, geo.length()) for idx, geo
+        geo_lst = [(idx, geo.length(), self.base.sketch.getConstruction(idx))
+                   for idx, geo
                    in enumerate(self.base.sketch.Geometry)
                    if geo.TypeId == 'Part::GeomLineSegment']
         len_geo = len(geo_lst)
         for y in range(len_geo):
-            id_y, le_y = geo_lst[y]
-            a = EqEdge(id_y, le_y)
+            id_y, le_y, c = geo_lst[y]
+            a = EqEdge(id_y, le_y, c)
             for x in range(len_geo):
                 if x == y:
-                    # no point for diff on itself
                     continue
-                id_x, le_x = geo_lst[x]
+                id_x, le_x, c = geo_lst[x]
                 if x < y:
                     # diffs are symetric, no need to recompute
                     diff = self._differences[x].edg_differences[y - 1].difference
@@ -188,7 +182,7 @@ class EqEdges(QObject):
     def tolerances_create(self) -> None:
         self._tolerance_lst.clear()
         for item in self.differences:
-            a = EqEdge(item.geo_idx, item.length)
+            a = EqEdge(item.geo_idx, item.length, item.construct)
             a.edg_differences = item.edg_tolerances_get(self.tolerance)
             self._tolerance_lst.append(a)
         self.log_tol()
@@ -199,17 +193,19 @@ class EqEdges(QObject):
         if not len(edge_lst):
             return
         s: Set[Tuple[int, int]] = set()
+        con_list = []
         for edge in edge_lst:
             for diff in edge.edg_differences:
                 if (diff.geo_idx, edge.geo_idx) in s:
                     xp('skip redundant', diff.geo_idx, edge.geo_idx, **_eq)
                     continue
                 s.add((edge.geo_idx, diff.geo_idx))
-                doc.openTransaction('coed: Equal constraint')
-                self.base.sketch.addConstraint(Sketcher.Constraint('Equal', edge.geo_idx, diff.geo_idx))
-                doc.commitTransaction()
+                con_list.append(Sketcher.Constraint('Equal', edge.geo_idx, diff.geo_idx))
                 xp('created.emit', **_ev)
                 self.created.emit(edge.geo_idx, diff.geo_idx)
+        doc.openTransaction('coed: Equal constraint')
+        self.base.sketch.addConstraint(con_list)
+        doc.commitTransaction()
 
         sk: Sketcher.SketchObject = self.base.sketch
         sk.addProperty('App::PropertyString', 'coed')
@@ -221,8 +217,6 @@ class EqEdges(QObject):
         self.base.flags.set(Dirty.EQ_EDGES)
         self.base.flags.set(Dirty.XY_EDGES)
         self.base.flags.set(Dirty.COIN_POINTS)
-        # xp('ev.eq_chg.emit', **_ev)
-        # self.base.ev.eq_chg.emit('eq create finish')
         xp('creation_done.emit', **_ev)
         self.creation_done.emit()
 
@@ -247,20 +241,4 @@ class EqEdges(QObject):
 
 xps(__name__)
 if __name__ == '__main__':
-
-    b = EqEdges()
-
-    for item in b.differences:
-        print(item)
-
-    print('-------------------------------------------------')
-    print('tolerance', b.tolerance)
-    for item in b.tolerances:
-        print(item)
-
-    b.tolerance = 0.2
-
-    print('-------------------------------------------------')
-    print('tolerance', b.tolerance)
-    for item in b.tolerances:
-        print(item)
+    pass

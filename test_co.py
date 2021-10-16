@@ -1,17 +1,15 @@
 import random
-import sys
 import unittest
+
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
+import Sketcher
 from PySide2.QtWidgets import QApplication, QWidget
 
+from co_lib.co_base.co_config import Cfg
+from co_lib.co_base.co_observer import register, unregister
 from co_main import main_g
-from co_config import Cfg
-import Sketcher
-from co_logger import xp, flow
-# App.getDocument('Unbenannt').getObject('Sketch').delGeometries([0])
-from co_observer import register, unregister
 
 DOC = "Test"
 SKETCH = "Sketch"
@@ -60,7 +58,6 @@ class MyTest(unittest.TestCase):
         self.ex = main_g(self.ActiveSketch, self.app)
         self.app.exec_()
         Cfg().save()
-        # sys.exit()
 
     def testDisplayProps(self):
         print('App.activeDocument()', App.activeDocument())

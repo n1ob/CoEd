@@ -1,17 +1,18 @@
+from threading import Lock
 from typing import List, Tuple, Set
 
 import FreeCAD as App
 import FreeCADGui as Gui
-
 from PySide2.QtCore import QItemSelectionModel, QModelIndex, Qt, Slot
+from PySide2.QtGui import QBrush
 from PySide2.QtWidgets import QWidget, QGroupBox, QPushButton, QTableWidget, QBoxLayout, QVBoxLayout, \
     QHBoxLayout, QLabel, QDoubleSpinBox, QTableWidgetItem, QHeaderView
 
-import co_gui
-import co_impl
-from co_eq import EqEdges, EqEdge
-from co_logger import xp, flow, _eq, _ev, xps
-from co_observer import observer_event_provider_get
+from .co_eq import EqEdges, EqEdge
+from .. import co_impl, co_gui
+from ..co_base.co_cmn import wait_cursor, Controller, Worker, MyLabel
+from ..co_base.co_logger import xp, flow, _eq, _ev, xps
+from ..co_base.co_observer import observer_block
 
 _QL = QBoxLayout
 
@@ -22,8 +23,6 @@ class EqGui:
         self.impl: co_impl.CoEd = self.base.base
         self.eq: EqEdges = self.impl.eq_edges
         self.tab_eq = QWidget(None)
-        # xp('impl.ev.eq_chg.connect(self.on_eq_chg)', **_ev)
-        # self.impl.ev.eq_chg.connect(self.on_eq_chg)
         xp('eq.created.connect', **_ev)
         self.eq.created.connect(self.on_eq_created)
         xp('eq.creation_done.connect', **_ev)
@@ -36,6 +35,8 @@ class EqGui:
         self.eq_btn_create.setDisabled(True)
         self.eq_tbl_wid: QTableWidget = QTableWidget()
         self.tab_eq.setLayout(self.lay_get())
+        self.ctrl_up = None
+        self.ctrl_lock = Lock()
         self.update_table()
 
     @flow
@@ -54,11 +55,6 @@ class EqGui:
                self.eq_tbl_wid]]
         return self.base.lay_get(li)
 
-    # @flow
-    # @Slot(str)
-    # def on_eq_chg(self, words):
-    #     xp('Eq changed', words, **_ev)
-    
     @flow
     @Slot(int, int)
     def on_eq_created(self, i, j):
@@ -88,75 +84,87 @@ class EqGui:
         table_widget = QTableWidget(obj)
         table_widget.setColumnCount(3)
         w_item = QTableWidgetItem(u"Type")
-        table_widget.setHorizontalHeaderItem(0, w_item)
-        w_item = QTableWidgetItem(u"Info")
         table_widget.setHorizontalHeaderItem(1, w_item)
+        w_item = QTableWidgetItem(u"Info")
+        table_widget.setHorizontalHeaderItem(2, w_item)
         self.base.prep_table(table_widget)
         return table_widget
 
     @flow
     def create(self):
-        mod: QItemSelectionModel = self.eq_tbl_wid.selectionModel()
-        rows: List[QModelIndex] = mod.selectedRows(2)
-        create_list: List[EqEdge] = [x.data() for x in rows]
-        for idx in rows:
-            xp('row', idx.row(), ':', idx.data(), **_eq)
-        self.eq.create(create_list)
+        with wait_cursor():
+            mod: QItemSelectionModel = self.eq_tbl_wid.selectionModel()
+            rows: List[QModelIndex] = mod.selectedRows(0)
+            create_list: List[EqEdge] = [x.data() for x in rows]
+            for idx in rows:
+                xp('row', idx.row(), ':', idx.data(), **_eq)
+            self.eq.create(create_list)
         self.update_table()
 
     @flow
-    def update_table(self):
-        self.eq_tbl_wid.setUpdatesEnabled(False)
-        # self.eq_tbl_wid.setEnabled(False)
-        # self.eq_tbl_wid.clearContents()
-        self.eq_tbl_wid.setRowCount(0)
-        __sorting_enabled = self.eq_tbl_wid.isSortingEnabled()
-        self.eq_tbl_wid.setSortingEnabled(False)
+    def task_up(self, eq):
         edge_list: List[EqEdge] = self.eq.tolerances
         cs: Set[Tuple[int, int]] = self.eq.cons_get()
-        res_lst: List[EqEdge] = list()
-        for edge in edge_list:
-            ed = EqEdge(edge.geo_idx, edge.length)
-            ed.edg_differences = edge.cons_filter(cs)
-            res_lst.append(ed)
-        for idx, item in enumerate(res_lst):
-            if self.base.cfg_blubber and (len(item.edg_differences) == 0):
-                continue
-            self.eq_tbl_wid.insertRow(0)
-            fmt = f"({item.geo_idx}) {item.length: 5.1f}"
-            self.eq_tbl_wid.setItem(0, 0, QTableWidgetItem(fmt))
-            fmt = ' '.join(f'({x.geo_idx}) {x.difference:.1f}' for x in item.edg_differences)
-            w_item = QTableWidgetItem(fmt)
-            w_item.setTextAlignment(Qt.AlignCenter)
-            self.eq_tbl_wid.setItem(0, 1, w_item)
-            w_item2 = QTableWidgetItem()
-            w_item2.setData(Qt.DisplayRole, item)
-            xp('col 3', idx, **_eq)
-            self.eq_tbl_wid.setItem(0, 2, w_item2)
-        self.eq_tbl_wid.setSortingEnabled(__sorting_enabled)
-        hh: QHeaderView = self.eq_tbl_wid.horizontalHeader()
-        hh.resizeSections(QHeaderView.ResizeToContents)
-        # vh: QHeaderView = self.cons_tbl_wid.verticalHeader()
-        # self.eq_tbl_wid.setEnabled(True)
-        self.eq_tbl_wid.setUpdatesEnabled(True)
+        return edge_list, cs
+
+    @flow(short=True)
+    def on_result_up(self, result):
+        with self.ctrl_lock:
+            self.eq_tbl_wid.setUpdatesEnabled(False)
+            self.eq_tbl_wid.setRowCount(0)
+            __sorting_enabled = self.eq_tbl_wid.isSortingEnabled()
+            self.eq_tbl_wid.setSortingEnabled(False)
+            edge_list, cs = result
+            res_lst: List[EqEdge] = list()
+            for edge in edge_list:
+                ed = EqEdge(edge.geo_idx, edge.length, edge.construct)
+                ed.edg_differences = edge.cons_filter(cs)
+                res_lst.append(ed)
+            for idx, item in enumerate(res_lst):
+                if self.base.cfg_only_valid and (len(item.edg_differences) == 0):
+                    continue
+                self.eq_tbl_wid.insertRow(0)
+                w_item2 = QTableWidgetItem()
+                w_item2.setData(Qt.DisplayRole, item)
+                xp('col 3', idx, **_eq)
+                self.eq_tbl_wid.setItem(0, 0, w_item2)
+                fmt = f"Edge{item.geo_idx + 1} {item.length:.1f}"
+                w_item = QTableWidgetItem(fmt)
+                if item.construct:
+                    w_item.setForeground(QBrush(self.base.construct_color))
+                self.eq_tbl_wid.setItem(0, 1, w_item)
+                sn = ' '.join(f'{x.geo_idx+1}({x.difference:.2f})'
+                              for x in item.edg_differences
+                              if not self.eq.base.sketch.getConstruction(x.geo_idx))
+                sc = ' '.join(f'{x.geo_idx+1}({x.difference:.2f})'
+                              for x in item.edg_differences
+                              if self.eq.base.sketch.getConstruction(x.geo_idx))
+                xp('norm', sn, 'const', sc, **_eq)
+                wid = MyLabel(self.base.construct_color.name(), sn, sc)
+                self.eq_tbl_wid.setCellWidget(0, 2, wid)
+            self.eq_tbl_wid.setSortingEnabled(__sorting_enabled)
+            hh: QHeaderView = self.eq_tbl_wid.horizontalHeader()
+            hh.resizeSections(QHeaderView.ResizeToContents)
+            self.eq_tbl_wid.setUpdatesEnabled(True)
+
+    @flow
+    def update_table(self):
+        self.ctrl_up = Controller(Worker(self.task_up, self.eq), self.on_result_up, 'Equal')
 
     @flow
     def selected(self):
-        indexes: List[QModelIndex] = self.eq_tbl_wid.selectionModel().selectedRows(2)
+        indexes: List[QModelIndex] = self.eq_tbl_wid.selectionModel().selectedRows(0)
         rows: List = [x.row() for x in sorted(indexes)]
         xp(f'selected: {rows}', **_eq)
         if len(rows) == 0:
             self.eq_btn_create.setDisabled(True)
         else:
             self.eq_btn_create.setDisabled(False)
-
         doc_name = App.activeDocument().Name
-        observer_event_provider_get().blockSignals(True)
-        Gui.Selection.clearSelection(doc_name, True)
-        observer_event_provider_get().blockSignals(False)
+        with observer_block():
+            Gui.Selection.clearSelection(doc_name, True)
         ed_info = Gui.ActiveDocument.InEditInfo
         sk_name = ed_info[0].Name
-
         for item in indexes:
             eq: EqEdge = item.data()
             xp(f'row: {str(item.row())} idx: {eq.geo_idx} len: {eq.length:.2f} {eq.edg_differences}', **_eq)

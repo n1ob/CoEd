@@ -1,31 +1,49 @@
 from typing import List, Dict, Tuple, Callable
 
 import FreeCAD as App
-from PySide2.QtCore import Qt, Slot
+import FreeCADGui as Gui
+from PySide2.QtCore import Qt, Slot, QTimer
+from PySide2.QtGui import QFont, QColor
 from PySide2.QtWidgets import QComboBox, QWidget, QVBoxLayout, QPlainTextEdit, QApplication, QPushButton, \
     QTabWidget, QLabel, QTableWidget, QSpinBox, \
     QAbstractItemView, QHeaderView, QGroupBox, QDoubleSpinBox, QCheckBox, QBoxLayout, QLineEdit
 
-from co_cfg_gui import CfgGui
-from co_co_gui import CoGui
-from co_cs_gui import CsGui
-from co_eq_gui import EqGui
-from co_geo_gui import GeoGui
-from co_hv_gui import HvGui
-from co_impl import CoEd
-from co_logger import xp, flow, _ly, xps, _fl, _ob_s
-from co_observer import observer_event_provider_get
-from co_pa_gui import PaGui
-from co_rd_gui import RdGui
-from co_style import my_style
-from co_xy_gui import XyGui
+from .co_base.co_logger import xp, flow, _ly, xps, _fl, _ob_s, _ob_a, stack_tracer
+from .co_base.co_observer import observer_event_provider_get
+from .co_base.co_style import my_style
+from .co_impl import CoEd
+from .co_tabs.co_cfg_gui import CfgGui
+from .co_tabs.co_co_gui import CoGui
+from .co_tabs.co_cs_gui import CsGui
+from .co_tabs.co_eq_gui import EqGui
+from .co_tabs.co_geo_gui import GeoGui
+from .co_tabs.co_hv_gui import HvGui
+from .co_tabs.co_pa_gui import PaGui
+from .co_tabs.co_rd_gui import RdGui
+from .co_tabs.co_xy_gui import XyGui
 
 _QL = QBoxLayout
 
 
+class SkHint(QWidget):
+    def __init__(self):
+        super().__init__()
+        flags: Qt.WindowFlags = Qt.Window
+        flags |= Qt.WindowStaysOnTopHint
+        flags |= Qt.FramelessWindowHint
+        self.setWindowFlags(flags)
+        self.label = QLabel(self)
+        font: QFont = self.label.font()
+        i = font.pointSize()
+        font.setPointSize(i+2)
+        self.label.setFont(font)
+        self.label.setText('No active sketch')
+        self.label.adjustSize()
+        self.label.setAlignment(Qt.AlignCenter)
+
+
 # noinspection PyArgumentList
 class CoEdGui(QWidget):
-
     @flow(short=True)
     def __init__(self, base: CoEd, parent=None):
         super().__init__(parent)
@@ -33,7 +51,11 @@ class CoEdGui(QWidget):
         self.evo = observer_event_provider_get()
         self.evo.add_selection.connect(self.on_add_selection)
         self.evo.clear_selection.connect(self.on_clear_selection)
-        self.cfg_blubber: bool = True
+        self.evo.open_transact.connect(self.on_open_transact)
+        self.evo.commit_transact.connect(self.on_commit_transact)
+        self.evo.undo_doc.connect(self.on_undo_doc)
+        self.evo.obj_recomputed.connect(self.on_obj_recomputed)
+        self.cfg_only_valid: bool = True
         flags: Qt.WindowFlags = Qt.Window
         flags |= Qt.WindowStaysOnTopHint
         self.setWindowFlags(flags)
@@ -41,6 +63,7 @@ class CoEdGui(QWidget):
         self.tbl_font = None
         self.geo_edt_font = None
         self.cfg_edt_font = None
+        self.construct_color: QColor = QColor()
         self.cfg_gui = CfgGui(self)
         self.geo_gui = GeoGui(self)
         self.cs_gui = CsGui(self)
@@ -66,6 +89,12 @@ class CoEdGui(QWidget):
         main_layout.addWidget(self.tabs)
         self.setLayout(main_layout)
         self.setWindowTitle("MyCoEd")
+        self.evo.in_edit.connect(self.on_in_edit)
+        self.evo.reset_edit.connect(self.on_reset_edit)
+        self.sk_hint = None
+        self.sk_hint_tim = QTimer()
+        self.sk_hint_tim.setSingleShot(True)
+        self.sk_hint_tim.timeout.connect(self.on_timer)
 
     @staticmethod
     def db_s_box_get(val, prec, step, func):
@@ -108,6 +137,76 @@ class CoEdGui(QWidget):
 
     # -------------------------------------------------------------------------
     @flow
+    @Slot(object, str)
+    def on_open_transact(self, doc, name):
+        xp(f'on_open_transact doc: {doc} name: {name}', **_ob_s)
+
+    @flow
+    @Slot(object, str)
+    def on_commit_transact(self, doc, name):
+        xp(f'on_commit_transact doc: {doc} name: {name}', **_ob_s)
+        if 'coed' in name:
+            xp('ignore own', **_ob_s)
+        else:
+            self.up_cur_table()
+
+    @flow
+    @Slot(object)
+    def on_undo_doc(self, doc):
+        xp(f'on_undo_doc doc: {doc}', **_ob_a)
+        if doc.TypeId == 'App::Document':
+            doc: App.Document
+            if doc.ActiveObject.TypeId == 'Sketcher::SketchObject':
+                self.base.flags.all()
+                self.up_cur_table()
+
+    @flow
+    @Slot(object)
+    def on_in_edit(self, obj):
+        xp('on_in_edit', obj, obj.TypeId)
+        if obj.TypeId == 'SketcherGui::ViewProviderSketch':
+            ed_info = Gui.ActiveDocument.InEditInfo
+            xp('ed_info', ed_info)
+            if ed_info is not None:
+                if ed_info[0].TypeId == 'Sketcher::SketchObject':
+                    xp('self.base.sketch is ed_info', self.base.sketch is ed_info[0])
+                    if self.base.sketch is not ed_info[0]:
+                        self.base.sketch = ed_info[0]
+                        xps()
+                        self.up_cur_table()
+                self.show()
+
+    @flow
+    @Slot(object)
+    def on_obj_recomputed(self, obj):
+        xp(f'on_obj_recomputed obj:', str(obj), **_ob_s)
+
+    @flow
+    @Slot()
+    def on_timer(self):
+        if self.sk_hint is not None:
+            self.sk_hint: SkHint
+            self.sk_hint.close()
+
+    @flow
+    @Slot(object)
+    def on_reset_edit(self, obj):
+        xp('on_reset_edit', obj, obj.TypeId)
+        ed_info = Gui.ActiveDocument.InEditInfo
+        xp('ed_info', ed_info)
+        if obj.TypeId == 'SketcherGui::ViewProviderSketch':
+            self.hide()
+            self.sk_hint = SkHint()
+            pos = self.sk_hint.pos()
+            if pos.x() < 0:
+                pos.setX(0)
+            if pos.y() < 0:
+                pos.setY(0)
+            self.sk_hint.move(pos)
+            self.sk_hint.show()
+            self.sk_hint_tim.start(3000)
+
+    @flow
     @Slot(object, object, object, object)
     def on_add_selection(self, doc, obj, sub, pnt):
         xp(f'on_add_selection: doc:', str(doc), 'obj: ', str(obj), 'sub: ', str(sub), 'pnt: ', str(pnt), **_ob_s)
@@ -118,6 +217,25 @@ class CoEdGui(QWidget):
     def on_clear_selection(self, doc):
         xp(f'on_clear_selection: doc:', str(doc), **_ob_s)
         self.tbl_clear_select()
+
+    @flow
+    def up_cur_table(self):
+        info: Dict[int, Tuple[QTableWidget, Callable]] = {
+            0: (self.cs_gui.cons_tbl_wid, self.cs_gui.update_table),
+            1: (self.co_gui.co_tbl_wid, self.co_gui.update_table),
+            2: (self.hv_gui.hv_tbl_wid, self.hv_gui.update_table),
+            3: (self.rd_gui.rad_tbl_wid, self.rd_gui.update_table),
+            4: (self.xy_gui.xy_tbl_wid, self.xy_gui.update_table),
+            5: (self.eq_gui.eq_tbl_wid, self.eq_gui.update_table),
+            6: (self.pa_gui.pa_tbl_wid, self.pa_gui.update_table),
+        }
+        try:
+            tbl_idx = self.tabs.currentIndex()
+            if tbl_idx in range(7):
+                info.get(tbl_idx)[1]()
+        except Exception as ex:
+            xp(ex)
+            stack_tracer()
 
     @flow
     def on_cur_tab_chg(self, index: int):
@@ -160,7 +278,6 @@ class CoEdGui(QWidget):
             from_gui = False
         if from_gui:
             self.tbl_clear_select()
-
         if shape.find('Vertex') != -1:
             no = int(shape[6:])
             typ = 'Vertex'
@@ -181,13 +298,13 @@ class CoEdGui(QWidget):
     def prep_table(self, tbl: QTableWidget):
         tbl.horizontalHeader().setVisible(True)
         tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
-        tbl.setColumnHidden(2, True)
-        tbl.sortItems(0, Qt.AscendingOrder)
+        tbl.setColumnHidden(0, True)
+        tbl.sortItems(1, Qt.AscendingOrder)
         tbl.setSortingEnabled(True)
         hh: QHeaderView = tbl.horizontalHeader()
-        hh.setSectionResizeMode(0, QHeaderView.Interactive)
-        hh.setSectionResizeMode(1, QHeaderView.Stretch)
-        hh.setSectionResizeMode(2, QHeaderView.Fixed)
+        hh.setSectionResizeMode(0, QHeaderView.Fixed)
+        hh.setSectionResizeMode(1, QHeaderView.Interactive)
+        hh.setSectionResizeMode(2, QHeaderView.Stretch)
         vh: QHeaderView = tbl.verticalHeader()
         # noinspection PyArgumentList
         vh.setSectionResizeMode(QHeaderView.Interactive)
@@ -203,10 +320,4 @@ class CoEdGui(QWidget):
 
 xps(__name__)
 if __name__ == '__main__':
-    import sys
-
-    app = QApplication()
-    my_style(app)
-    controller = CoEdGui()
-    controller.show()
-    sys.exit(app.exec_())
+    pass
