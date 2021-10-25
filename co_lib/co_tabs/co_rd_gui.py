@@ -3,16 +3,17 @@ from typing import List
 
 import FreeCAD as App
 import FreeCADGui as Gui
+import Sketcher
 from PySide2.QtCore import Slot, QItemSelectionModel, QModelIndex, Qt
-from PySide2.QtGui import QBrush
 from PySide2.QtWidgets import QBoxLayout, QWidget, QGroupBox, QCheckBox, QDoubleSpinBox, QPushButton, QTableWidget, \
     QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView
 
 from .co_rd import RdCircles, RdCircle
 from .. import co_impl, co_gui
-from ..co_base.co_cmn import wait_cursor, Controller, Worker
+from ..co_base.co_cmn import wait_cursor, ColorTableItem, ObjType
 from ..co_base.co_logger import flow, xp, _rd, _ev, xps
-from ..co_base.co_observer import observer_block
+from ..co_base.co_lookup import Lookup
+from ..co_base.co_observer import observer_block, observer_event_provider_get
 
 _QL = QBoxLayout
 
@@ -20,6 +21,7 @@ _QL = QBoxLayout
 class RdGui:
     def __init__(self, base):
         self.base: co_gui.CoEdGui = base
+        self.sketch: Sketcher.SketchObject = self.base.sketch
         self.impl: co_impl.CoEd = self.base.base
         self.rd: RdCircles = self.impl.rd_circles
         self.tab_rd = QWidget(None)
@@ -34,6 +36,8 @@ class RdGui:
         self.rad_btn_create.setDisabled(True)
         self.rad_tbl_wid: QTableWidget = QTableWidget()
         self.tab_rd.setLayout(self.lay_get())
+        self.evo = observer_event_provider_get()
+        self.evo.in_edit.connect(self.on_in_edit)
         self.ctrl_up = None
         self.ctrl_lock = Lock()
         self.update_table()
@@ -55,6 +59,14 @@ class RdGui:
                [QHBoxLayout(), self.rad_chk_box, self.rad_dbl_sp_box, _QL.addStretch, self.rad_btn_create],
                self.rad_tbl_wid]]
         return self.base.lay_get(li)
+
+    @flow
+    @Slot(object)
+    def on_in_edit(self, obj):
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
+            ed_info = Gui.ActiveDocument.InEditInfo
+            if (ed_info is not None) and (ed_info[0].TypeId == ObjType.SKETCH_OBJECT):
+                self.sketch = ed_info[0]
 
     @flow
     @Slot(int, float)
@@ -119,49 +131,51 @@ class RdGui:
 
     @flow(short=True)
     def on_result_up(self, result):
-        with self.ctrl_lock:
-            self.rad_tbl_wid.setUpdatesEnabled(False)
-            self.rad_tbl_wid.setRowCount(0)
-            __sorting_enabled = self.rad_tbl_wid.isSortingEnabled()
-            self.rad_tbl_wid.setSortingEnabled(False)
-            cir_list, rad_lst, dia_lst = result
-            xp('->', cir_list, **_rd)
-            for item in cir_list:
-                cs = f'---'
-                typ = 'cir' if item.type_id == 'Part::GeomCircle' else 'arc'
-                if item.geo_idx in rad_lst:
-                    if self.base.cfg_only_valid:
-                        continue
-                    xp('rad cs', item.geo_idx, **_rd)
-                    cs = f'rad'
-                if item.geo_idx in dia_lst:
-                    if self.base.cfg_only_valid:
-                        continue
-                    xp('dia cs', item.geo_idx, **_rd)
-                    cs = f'dia'
-                self.rad_tbl_wid.insertRow(0)
-                w_item = QTableWidgetItem()
-                w_item.setData(Qt.DisplayRole, item)
-                xp('col 3', item.geo_idx, **_rd)
-                self.rad_tbl_wid.setItem(0, 0, w_item)
-                w_item = QTableWidgetItem(f'Edge{item.geo_idx + 1}')
-                if item.construct:
-                    w_item.setForeground(QBrush(self.base.construct_color))
-                self.rad_tbl_wid.setItem(0, 1, QTableWidgetItem(w_item))
-                fmt = f"r {item.radius:.1f} cs {cs} {typ}"
-                w_item = QTableWidgetItem(fmt)
-                if self.impl.sketch.getConstruction(item.geo_idx):
-                    w_item.setForeground(QBrush(self.base.construct_color))
-                w_item.setTextAlignment(Qt.AlignCenter)
-                self.rad_tbl_wid.setItem(0, 2, w_item)
-            self.rad_tbl_wid.setSortingEnabled(__sorting_enabled)
-            hh: QHeaderView = self.rad_tbl_wid.horizontalHeader()
-            hh.resizeSections(QHeaderView.ResizeToContents)
-            self.rad_tbl_wid.setUpdatesEnabled(True)
+        self.rad_tbl_wid.setUpdatesEnabled(False)
+        self.rad_tbl_wid.setRowCount(0)
+        __sorting_enabled = self.rad_tbl_wid.isSortingEnabled()
+        self.rad_tbl_wid.setSortingEnabled(False)
+        cir_list, rad_lst, dia_lst = result
+        xp('->', cir_list, **_rd)
+        for item in cir_list:
+            cs = f'---'
+            typ = 'cir' if item.type_id == 'Part::GeomCircle' else 'arc'
+            if item.geo_idx in rad_lst:
+                if self.base.cfg_only_valid:
+                    continue
+                xp('rad cs', item.geo_idx, **_rd)
+                cs = f'rad'
+            if item.geo_idx in dia_lst:
+                if self.base.cfg_only_valid:
+                    continue
+                xp('dia cs', item.geo_idx, **_rd)
+                cs = f'dia'
+            self.rad_tbl_wid.insertRow(0)
+            w_item = QTableWidgetItem()
+            w_item.setData(Qt.DisplayRole, item)
+            xp('col 3', item.geo_idx, **_rd)
+            self.rad_tbl_wid.setItem(0, 0, w_item)
+
+            t = Lookup.translate_ui_name(item.geo_idx)
+            fmt = f"{t}"
+            w_item = ColorTableItem(item.construct, False, fmt)
+            self.rad_tbl_wid.setItem(0, 1, w_item)
+
+            fmt = f"r {item.radius:.1f} cs {cs} {typ}"
+            w_item = ColorTableItem(item.construct, False, fmt)
+            w_item.setTextAlignment(Qt.AlignCenter)
+            self.rad_tbl_wid.setItem(0, 2, w_item)
+
+        self.rad_tbl_wid.setSortingEnabled(__sorting_enabled)
+        hh: QHeaderView = self.rad_tbl_wid.horizontalHeader()
+        hh.resizeSections(QHeaderView.ResizeToContents)
+        self.rad_tbl_wid.setUpdatesEnabled(True)
 
     @flow
     def update_table(self):
-        self.ctrl_up = Controller(Worker(self.task_up, self.rd), self.on_result_up, name='Radius')
+        # self.ctrl_up = Controller(Worker(self.task_up, self.rd), self.on_result_up, name='Radius')
+        res = self.task_up(self.rd)
+        self.on_result_up(res)
 
     @flow
     def selected(self):
@@ -180,10 +194,11 @@ class RdGui:
         for item in indexes:
             rad: RdCircle = item.data()
             xp(f'row: {str(item.row())} idx: {rad.geo_idx} cons: {rad}', **_rd)
-            Gui.Selection.addSelection(doc_name, sk_name, f'Edge{rad.geo_idx + 1}')
+            t = Lookup.translate_ui_name(rad.geo_idx, False)
+            Gui.Selection.addSelection(doc_name, sk_name, f'{t}')
             idx = 0
             while True:
-                geo, pos = self.impl.sketch.getGeoVertexIndex(idx)
+                geo, pos = self.sketch.getGeoVertexIndex(idx)
                 if (geo == rad.geo_idx) and (pos == 3):
                     Gui.Selection.addSelection(doc_name, sk_name, f'Vertex{idx + 1}')
                     xp(f'Vertex{idx + 1} idx: {idx} geo: ({geo}.{pos})', **_rd)

@@ -4,7 +4,6 @@
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/FreeCad.iml" filepath="$PROJECT_DIR$/.idea/FreeCad.iml" />
       <module fileurl="file://$USER_HOME$/AppData/Roaming/FreeCAD/Mod/MyScripts/.idea/MyScripts.iml" filepath="$USER_HOME$/AppData/Roaming/FreeCAD/Mod/MyScripts/.idea/MyScripts.iml" />
-      <module fileurl="file://$USER_HOME$/Documents/FreeCAD/Macros/coed/.idea/coed.iml" filepath="$USER_HOME$/Documents/FreeCAD/Macros/coed/.idea/coed.iml" />
     </modules>
   </component>
 </project>

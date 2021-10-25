@@ -6,10 +6,10 @@ from typing import NamedTuple, List, Iterable, Callable
 import FreeCAD as App
 from PySide2 import QtCore
 from PySide2.QtCore import QObject, Signal, Slot, QThread
-from PySide2.QtGui import QCursor, QFont
-from PySide2.QtWidgets import QApplication, QWidget, QLabel, QHBoxLayout
+from PySide2.QtGui import QCursor, QFont, QBrush
+from PySide2.QtWidgets import QApplication, QWidget, QLabel, QHBoxLayout, QTableWidgetItem
 
-from co_lib.co_base.co_config import CfgFonts
+from co_lib.co_base.co_config import CfgFonts, CfgColors
 from co_lib.co_base.co_logger import xps, _ti
 
 # ! PointPos lets us refer to different aspects of a piece of geometry.  sketcher::none refers
@@ -35,27 +35,62 @@ def fmt_vec(vec: App.Vector) -> str:
 
 # noinspection SpellCheckingInspection,PyPep8
 class ConType(Enum):
-    NONE              = "None"
-    COINCIDENT        = "Coincident"
-    HORIZONTAL        = "Horizontal"
-    VERTICAL          = "Vertical"
-    PARALLEL          = "Parallel"
-    TANGENT           = "Tangent"
-    DISTANCE          = "Distance"
-    DISTANCEX         = "DistanceX"
-    DISTANCEY         = "DistanceY"
-    ANGLE             = "Angle"
-    PERPENDICULAR     = "Perpendicular"
-    RADIUS            = "Radius"
-    EQUAL             = "Equal"
-    POINTONOBJECT     = "PointOnObject"
-    SYMMETRIC         = "Symmetric"
-    INTERNALALIGNMENT = "InternalAlignment"
-    SNELLSLAW         = "SnellsLaw"
-    BLOCK             = "Block"
-    DIAMETER          = "Diameter"
-    WEIGHT            = "Weight"
-    ALL               = "All"
+    NONE: str              = "None"
+    COINCIDENT: str        = "Coincident"
+    HORIZONTAL: str        = "Horizontal"
+    VERTICAL: str          = "Vertical"
+    PARALLEL: str          = "Parallel"
+    TANGENT: str           = "Tangent"
+    DISTANCE: str          = "Distance"
+    DISTANCEX: str         = "DistanceX"
+    DISTANCEY: str         = "DistanceY"
+    ANGLE: str             = "Angle"
+    PERPENDICULAR: str     = "Perpendicular"
+    RADIUS: str            = "Radius"
+    EQUAL: str             = "Equal"
+    POINTONOBJECT: str     = "PointOnObject"
+    SYMMETRIC: str         = "Symmetric"
+    INTERNALALIGNMENT: str = "InternalAlignment"
+    SNELLSLAW: str         = "SnellsLaw"
+    BLOCK: str             = "Block"
+    DIAMETER: str          = "Diameter"
+    WEIGHT: str            = "Weight"
+    ALL: str               = "All"
+
+
+class GeoType:
+    LINE_SEGMENT: str = 'Part::GeomLineSegment'
+    CIRCLE: str = 'Part::GeomCircle'
+    ARC_OF_CIRCLE: str = 'Part::GeomArcOfCircle'
+    POINT: str = 'Part::GeomPoint'
+
+
+class GeoTypeUi:
+    VERTEX: str = 'Vertex'
+    EDGE: str = 'Edge'
+    EXTERNAL_EDGE: str = 'ExternalEdge'
+    EXTERNAL_EDGE_ABR: str = 'ExEdge'
+    CONSTRAINT: str = 'Constraint'
+    H_AXIS: str = 'H_Axis'
+    V_AXIS: str = 'V_Axis'
+    ROOT_POINT: str = 'RootPoint'
+    UNKNOWN: str = 'Unknown'
+
+
+class ObjType:
+    SKETCH_OBJECT: str = 'Sketcher::SketchObject'
+    VIEW_PROVIDER_SKETCH: str = 'SketcherGui::ViewProviderSketch'
+
+
+class GeoId(NamedTuple):
+    idx: int
+    typ: int
+
+    def __str__(self) -> str:
+        return f'({self.idx}.{pt_typ_str[self.typ]})'
+
+    def __repr__(self) -> str:
+        return f'({self.idx}.{self.typ})'
 
 
 class GeoPt(NamedTuple):
@@ -235,24 +270,52 @@ class Controller(QObject):
         xps('on_thread_finished', self.objectName(), **_ti)
 
 
-class MyLabel(QWidget):
-    def __init__(self, c_color, normal_txt, construct_txt):
-        super(MyLabel, self).__init__()
-        cfg = CfgFonts()
-        f: QFont = cfg.font_get(cfg.FONT_TABLE)
+class ColorTableItem(QTableWidgetItem):
+    def __init__(self, co, ex, txt):
+        super(ColorTableItem, self).__init__()
+        cfg_c = CfgColors()
+        c1 = cfg_c.color_get(CfgColors.COLOR_CONSTRUCT)
+        c2 = cfg_c.color_get(CfgColors.COLOR_EXTERN)
+        if ex:
+            self.setForeground(QBrush(c2))
+        elif co:
+            self.setForeground(QBrush(c1))
+        self.setText(txt)
+
+
+class TableLabel(QWidget):
+    def __init__(self, normal_txt, construct_txt, extern_txt):
+        super(TableLabel, self).__init__()
+        cfg_f = CfgFonts()
+        f: QFont = cfg_f.font_get(cfg_f.FONT_TABLE)
+        cfg_c = CfgColors()
+        c1 = cfg_c.color_get(CfgColors.COLOR_CONSTRUCT)
+        c2 = cfg_c.color_get(CfgColors.COLOR_EXTERN)
         self.lbl_normal = QLabel(normal_txt)
         self.lbl_normal.setFont(f)
         self.lbl_normal.setMinimumWidth(0)
         self.lbl_normal.setContentsMargins(0, 0, 0, 0)
+        if normal_txt == '':
+            self.lbl_normal.hide()
         self.lbl_construct = QLabel(construct_txt)
-        self.lbl_construct.setFont(f)
-        self.lbl_construct.setContentsMargins(0, 0, 0, 0)
-        style = f'color: {c_color}'
+        style = f'color: {c1.name()}'
         # style = f'color: {c_color}; border-width: 0px; border-style: none; min-width: 0px; padding: 0px'
         self.lbl_construct.setStyleSheet(style)
+        self.lbl_construct.setFont(f)
+        self.lbl_construct.setContentsMargins(0, 0, 0, 0)
+        if construct_txt == '':
+            self.lbl_construct.hide()
+        self.lbl_extern = QLabel(extern_txt)
+        style = f'color: {c2.name()}'
+        self.lbl_extern.setStyleSheet(style)
+        self.lbl_extern.setFont(f)
+        self.lbl_extern.setContentsMargins(0, 0, 0, 0)
+        if extern_txt == '':
+            self.lbl_extern.hide()
         lay = QHBoxLayout(self)
         lay.addWidget(self.lbl_normal)
         lay.addWidget(self.lbl_construct)
+        lay.addWidget(self.lbl_extern)
         lay.addStretch()
         lay.setContentsMargins(0, 0, 0, 0)
 

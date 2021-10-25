@@ -5,9 +5,11 @@ import FreeCAD as App
 import Sketcher
 from PySide2.QtCore import Signal, QObject
 
+from co_lib.co_base.co_config import CfgTransient
+from co_lib.co_base.co_lookup import Lookup
 from . import co_cs
 from .. import co_impl
-from ..co_base.co_cmn import ConType
+from ..co_base.co_cmn import ConType, GeoType
 from ..co_base.co_flag import Dirty
 from ..co_base.co_logger import xp, xps, flow, _eq, _ev
 
@@ -15,23 +17,26 @@ from ..co_base.co_logger import xp, xps, flow, _eq, _ev
 class GeoDiff(NamedTuple):
     geo_idx: int
     difference: float
+    construct: bool
+    extern: bool
 
     def __str__(self) -> str:
-        return f'{self.geo_idx} {self.difference:.2f}'
+        return f'{self.geo_idx} {self.difference:.2f} co {self.construct} ex {self.extern}'
 
     def __repr__(self) -> str:
         return self.__str__()
 
 
 class EqEdge:
-    def __init__(self, geo_idx: int, length: float, construct: bool) -> None:
+    def __init__(self, geo_idx: int, length: float, construct: bool, extern: bool) -> None:
         self.geo_idx: int = geo_idx
         self.length: float = length
         self.edg_differences: List[GeoDiff] = list()
         self.construct: bool = construct
+        self.extern: bool = extern
 
     def __str__(self) -> str:
-        return f'geo: {self.geo_idx} length: {self.length:.2f} diff: {self.edg_differences}'
+        return f'geo: {self.geo_idx} length: {self.length:.2f} co {self.construct} ex {self.extern} diff: {self.edg_differences}'
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -107,9 +112,11 @@ class EqEdges(QObject):
         super(EqEdges, self).__init__()
         self.__init = False
         self.base: co_impl.CoEd = base
+        # self.sketch: Sketcher.SketchObject = self.base.sketch
         self.__diff_init = False
         self.__tol_init = False
-        self.tolerance: float = 0.1
+        self.cfg = CfgTransient()
+        self.tolerance: float = self.cfg.get(self.cfg.EQ_TOLERANCE)
         self.differences: List[EqEdge] = list()
         self.tolerances: List[EqEdge] = list()
         self.__init = True
@@ -121,6 +128,7 @@ class EqEdges(QObject):
     @tolerance.setter
     def tolerance(self, value):
         self._tolerance = value
+        self.cfg.set(self.cfg.EQ_TOLERANCE, value)
         if self.__init:
             self.tolerances_create()
 
@@ -153,25 +161,30 @@ class EqEdges(QObject):
     @flow
     def differences_create(self) -> None:
         self._differences.clear()
-        geo_lst = [(idx, geo.length(), self.base.sketch.getConstruction(idx))
+        geo_lst = [(idx, geo.length(), self.base.sketch.getConstruction(idx), idx <= -3)
                    for idx, geo
                    in enumerate(self.base.sketch.Geometry)
-                   if geo.TypeId == 'Part::GeomLineSegment']
+                   if geo.TypeId == GeoType.LINE_SEGMENT]
+
+        lo = Lookup(self.base.sketch)
+        geo_lst += [(geo_id.idx, geo.length(), True, True) for geo_id, geo in lo.extern_points('E')]
+        # geo_lst += [(idx, len_, True, True) for idx, len_ in lo.extern_points(2)]
+        xp(geo_lst)
         len_geo = len(geo_lst)
         for y in range(len_geo):
-            id_y, le_y, c = geo_lst[y]
-            a = EqEdge(id_y, le_y, c)
+            id_y, le_y, c, e = geo_lst[y]
+            a = EqEdge(id_y, le_y, c, e)
             for x in range(len_geo):
                 if x == y:
                     continue
-                id_x, le_x, c = geo_lst[x]
+                id_x, le_x, c, e = geo_lst[x]
                 if x < y:
                     # diffs are symetric, no need to recompute
                     diff = self._differences[x].edg_differences[y - 1].difference
-                    n = GeoDiff(id_x, diff)
+                    n = GeoDiff(id_x, diff, c, e)
                     a.edg_differences.append(n)
                 else:
-                    a.edg_differences.append(GeoDiff(id_x, abs(le_y - le_x)))
+                    a.edg_differences.append(GeoDiff(id_x, abs(le_y - le_x), c, e))
             self._differences.append(a)
         for edg in self._differences:
             edg.edg_differences.sort(key=attrgetter('difference'))
@@ -182,7 +195,7 @@ class EqEdges(QObject):
     def tolerances_create(self) -> None:
         self._tolerance_lst.clear()
         for item in self.differences:
-            a = EqEdge(item.geo_idx, item.length, item.construct)
+            a = EqEdge(item.geo_idx, item.length, item.construct, item.extern)
             a.edg_differences = item.edg_tolerances_get(self.tolerance)
             self._tolerance_lst.append(a)
         self.log_tol()

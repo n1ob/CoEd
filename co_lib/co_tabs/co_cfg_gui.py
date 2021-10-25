@@ -19,6 +19,7 @@ _QL = QBoxLayout
 class CfgGui:
     def __init__(self, base):
         self.base: co_gui.CoEdGui = base
+        # self.sketch: Sketcher.SketchObject = self.base.sketch
         self.impl: co_impl.CoEd = self.base.base
         self.tab_cfg = QWidget(None)
         self.cfg_fnts = CfgFonts()
@@ -37,6 +38,7 @@ class CfgGui:
         self.base.geo_edt_font = self.cfg_fnts.font_get(CfgFonts.FONT_GEO_EDT)
         self.base.cfg_edt_font = self.cfg_fnts.font_get(CfgFonts.FONT_CFG_EDT)
         self.base.construct_color = self.cfg_color.color_get(CfgColors.COLOR_CONSTRUCT)
+        self.base.extern_color = self.cfg_color.color_get(CfgColors.COLOR_EXTERN)
 
         self.cfg_filter_cmb = QComboBox()
         self.cfg_txt_edt = QPlainTextEdit()

@@ -5,23 +5,27 @@ from typing import List, Set
 import FreeCAD as App
 import Part
 import Sketcher
-from PySide2.QtCore import Signal, QObject
+from PySide2.QtCore import Signal, QObject, Slot
 
 from . import co_cs
 from .. import co_impl
-from ..co_base.co_cmn import fmt_vec
+from ..co_base.co_cmn import fmt_vec, GeoType, ObjType
+from ..co_base.co_config import CfgTransient
 from ..co_base.co_flag import Dirty
 from ..co_base.co_logger import flow, xp, _hv, xps, _ev, Profile
+from ..co_base.co_lookup import Lookup
+from ..co_base.co_observer import observer_event_provider_get
 
 
 class HvEdge:
-    def __init__(self, geo_idx: int, y_angel: float, start: App.Vector, end: App.Vector, construct: bool):
+    def __init__(self, geo_idx: int, y_angel: float, start: App.Vector, end: App.Vector, construct: bool, extern: bool):
         self.geo_idx = geo_idx
         self.pt_start: App.Vector = start
         self.pt_end: App.Vector = end
         self.x_angel: float = 90 - y_angel
         self.y_angel: float = y_angel
         self.construct: bool = construct
+        self.extern: bool = extern
 
     def __str__(self):
         return f"GeoIdx {self.geo_idx}, Start ({fmt_vec(self.pt_start)} End ({fmt_vec(self.pt_end)} " \
@@ -47,7 +51,11 @@ class HvEdges(QObject):
         self.__tol_init = False
         self.__angle_init = False
         self.base: co_impl.CoEd = base
-        self.tolerance: float = 1.0
+        self.sketch: Sketcher.SketchObject = self.base.sketch
+        self.evo = observer_event_provider_get()
+        self.evo.in_edit.connect(self.on_in_edit)
+        self.cfg = CfgTransient()
+        self.tolerance: float = self.cfg.get(self.cfg.HV_TOLERANCE)
         self.angles: List[HvEdge] = list()
         self.tolerances: List[HvEdge] = list()
         self.__init = True
@@ -59,6 +67,7 @@ class HvEdges(QObject):
     @tolerance.setter
     def tolerance(self, value):
         self._tolerance = value
+        self.cfg.set(self.cfg.HV_TOLERANCE, value)
         if self.__init:
             self.tolerances_create()
 
@@ -88,6 +97,14 @@ class HvEdges(QObject):
     @angles.setter
     def angles(self, value):
         self._angles = value
+
+    @flow
+    @Slot(object)
+    def on_in_edit(self, obj):
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
+            ed_info = App.Gui.ActiveDocument.InEditInfo
+            if (ed_info is not None) and (ed_info[0].TypeId == ObjType.SKETCH_OBJECT):
+                self.sketch = ed_info[0]
 
     @staticmethod
     def __ge(start: App.Vector, end: App.Vector) -> float:
@@ -119,16 +136,24 @@ class HvEdges(QObject):
     @flow
     def angles_create(self) -> None:
         self._angles.clear()
-        geo_lst = [(idx, geo) for idx, geo
-                   in enumerate(self.base.sketch.Geometry)
-                   if geo.TypeId == 'Part::GeomLineSegment']
+        geo_lst = [(idx, geo, self.sketch.getConstruction(idx), idx <= -3)
+                   for idx, geo
+                   in enumerate(self.sketch.Geometry)
+                   if geo.TypeId == GeoType.LINE_SEGMENT]
+        lo = Lookup(self.sketch)
+        geo_lst += [(id_.idx, geo, True, True)
+                    for id_, geo
+                    in lo.extern_points('E')
+                    if geo.TypeId == GeoType.LINE_SEGMENT]
+        # geo_lst += [(idx, len_, True, True) for idx, len_ in lo.extern_points()]
+        xp(geo_lst)
         len_geo = len(geo_lst)
         for x in range(len_geo):
-            idx, line = geo_lst[x]
+            idx, line, c, e = geo_lst[x]
             line: Part.LineSegment
             y_angle: float = self.__alpha(App.Vector(line.StartPoint), App.Vector(line.EndPoint))
-            edg = HvEdge(idx, y_angle, App.Vector(line.StartPoint), App.Vector(line.EndPoint), self.base.sketch.getConstruction(idx))
-            xp(f'HvEdge: {idx} {y_angle:.2f} {fmt_vec(App.Vector(line.StartPoint))} {fmt_vec(App.Vector(line.EndPoint))} {self.base.sketch.getConstruction(idx)}')
+            edg = HvEdge(idx, y_angle, App.Vector(line.StartPoint), App.Vector(line.EndPoint), c, e)
+            xp(f'HvEdge: {idx} {y_angle:.2f} {fmt_vec(App.Vector(line.StartPoint))} {fmt_vec(App.Vector(line.EndPoint))} c {c} e {e}')
             self._angles.append(edg)
         self._angles.sort(key=attrgetter('y_angel'))
         self.base.flags.reset(Dirty.HV_EDGES)
@@ -167,10 +192,10 @@ class HvEdges(QObject):
                 xp('created.emit: Vertical', edge.geo_idx, **_ev)
                 self.created.emit('Vertical', edge.geo_idx)
         doc.openTransaction('coed: Horizontal/Vertical constraint')
-        self.base.sketch.addConstraint(con_list)
+        self.sketch.addConstraint(con_list)
         doc.commitTransaction()
 
-        sk: Sketcher.SketchObject = self.base.sketch
+        sk: Sketcher.SketchObject = self.sketch
         sk.addProperty('App::PropertyString', 'coed')
         sk.coed = 'hv_recompute'
         doc.openTransaction('coed: obj recompute')

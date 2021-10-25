@@ -1,11 +1,12 @@
 import FreeCAD as App
 import FreeCADGui as Gui
-from PySide2.QtCore import QObject
+import Sketcher
+from PySide2.QtCore import QObject, Slot
 from PySide2.QtWidgets import QBoxLayout, QWidget, QPlainTextEdit, QPushButton, QVBoxLayout, QHBoxLayout
 
-from co_lib.co_base.co_cmn import Controller, Worker
+from co_lib.co_base.co_cmn import Controller, Worker, ObjType
 from co_lib.co_base.co_lookup import Lookup
-from co_lib.co_base.co_observer import observer_block
+from co_lib.co_base.co_observer import observer_block, observer_event_provider_get
 from .. import co_impl, co_gui
 from ..co_base.co_logger import flow, xp, _tr
 from ..co_base.co_style import XMLHighlighter
@@ -17,6 +18,7 @@ class GeoGui(QObject):
     def __init__(self, base):
         super().__init__()
         self.base: co_gui.CoEdGui = base
+        self.sketch: Sketcher.SketchObject = self.base.sketch
         self.impl: co_impl.CoEd = self.base.base
         self.tab_geo = QWidget(None)
         self.geo_txt_edt = QPlainTextEdit()
@@ -24,6 +26,8 @@ class GeoGui(QObject):
         self.geo_btn_ext = QPushButton('Ext')
         self.geo_btn_vert = QPushButton('Open Vert')
         self.tab_geo.setLayout(self.geo_lay_get())
+        self.evo = observer_event_provider_get()
+        self.evo.in_edit.connect(self.on_in_edit)
         self.controller_ext = None
         self.controller_geo = None
 
@@ -46,6 +50,14 @@ class GeoGui(QObject):
         xp('task_ext', **_tr)
         impl.analyse_sketch()
         return impl.sketch_info_xml_get()
+
+    @flow
+    @Slot(object)
+    def on_in_edit(self, obj):
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
+            ed_info = Gui.ActiveDocument.InEditInfo
+            if (ed_info is not None) and (ed_info[0].TypeId == ObjType.SKETCH_OBJECT):
+                self.sketch = ed_info[0]
 
     @flow(short=True)
     def on_result_ext(self, result):
@@ -76,8 +88,8 @@ class GeoGui(QObject):
 
     @flow
     def on_geo_btn_clk_vert(self):
-        lo = Lookup(self.impl.sketch)
-        ls = lo.lookup_open_vert()
+        lo = Lookup(self.sketch)
+        ls = lo.open_vertices()
         doc_name = App.activeDocument().Name
         with observer_block():
             Gui.Selection.clearSelection(doc_name, True)

@@ -88,6 +88,7 @@ Main window
 ==================================================================================================*/
 QMainWindow,
 QDialog,
+QTableWidget::item,
 QWidget,
 QDockWidget,
 QToolBar  {

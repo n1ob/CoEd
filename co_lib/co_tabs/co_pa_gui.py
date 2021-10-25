@@ -4,14 +4,14 @@ from typing import List, Tuple, Set
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide2.QtCore import QItemSelectionModel, QModelIndex, Qt, Slot
-from PySide2.QtGui import QBrush
 from PySide2.QtWidgets import QWidget, QGroupBox, QPushButton, QTableWidget, QBoxLayout, QVBoxLayout, \
     QHBoxLayout, QLabel, QDoubleSpinBox, QTableWidgetItem, QHeaderView
 
-from .co_pa import PaEdges, PaEdge
+from .co_pa import PaEdges, PaEdge, GeoDiff
 from .. import co_impl, co_gui
-from ..co_base.co_cmn import wait_cursor, Controller, Worker, MyLabel
+from ..co_base.co_cmn import wait_cursor, TableLabel, ColorTableItem
 from ..co_base.co_logger import xp, flow, _pa, _ev, xps
+from ..co_base.co_lookup import Lookup
 from ..co_base.co_observer import observer_block
 
 _QL = QBoxLayout
@@ -20,6 +20,7 @@ _QL = QBoxLayout
 class PaGui:
     def __init__(self, base):
         self.base: co_gui.CoEdGui = base
+        # self.sketch: Sketcher.SketchObject = self.base.sketch
         self.impl: co_impl.CoEd = self.base.base
         self.pa: PaEdges = self.impl.pa_edges
         self.tab_pa = QWidget(None)
@@ -108,47 +109,59 @@ class PaGui:
 
     @flow(short=True)
     def on_result_up(self, result):
-        with self.ctrl_lock:
-            self.pa_tbl_wid.setUpdatesEnabled(False)
-            self.pa_tbl_wid.setRowCount(0)
-            __sorting_enabled = self.pa_tbl_wid.isSortingEnabled()
-            self.pa_tbl_wid.setSortingEnabled(False)
-            edge_list, cs = result
-            res_lst: List[PaEdge] = list()
-            for edge in edge_list:
-                ed = PaEdge(edge.geo_idx, edge.y_angel, edge.pt_start, edge.pt_end, edge.construct)
-                ed.edg_differences = edge.cons_filter(cs)
-                res_lst.append(ed)
-            for idx, item in enumerate(res_lst):
-                if self.base.cfg_only_valid and (len(item.edg_differences) == 0):
-                    continue
-                self.pa_tbl_wid.insertRow(0)
-                w_item2 = QTableWidgetItem()
-                w_item2.setData(Qt.DisplayRole, item)
-                xp('col 3', idx, **_pa)
-                self.pa_tbl_wid.setItem(0, 0, w_item2)
-                fmt = f"Edge{item.geo_idx + 1} {item.y_angel:.1f}"
-                w_item = QTableWidgetItem(fmt)
-                if item.construct:
-                    w_item.setForeground(QBrush(self.base.construct_color))
-                self.pa_tbl_wid.setItem(0, 1, w_item)
-                sn = ' '.join(f'{x.geo_idx+1}({x.difference:.2f})'
-                              for x in item.edg_differences
-                              if not self.pa.base.sketch.getConstruction(x.geo_idx))
-                sc = ' '.join(f'{x.geo_idx+1}({x.difference:.2f})'
-                              for x in item.edg_differences
-                              if self.pa.base.sketch.getConstruction(x.geo_idx))
-                xp('norm', sn, 'const', sc, **_pa)
-                wid = MyLabel(self.base.construct_color.name(), sn, sc)
-                self.pa_tbl_wid.setCellWidget(0, 2, wid)
-            self.pa_tbl_wid.setSortingEnabled(__sorting_enabled)
-            hh: QHeaderView = self.pa_tbl_wid.horizontalHeader()
-            hh.resizeSections(QHeaderView.ResizeToContents)
-            self.pa_tbl_wid.setUpdatesEnabled(True)
+        self.pa_tbl_wid.setUpdatesEnabled(False)
+        self.pa_tbl_wid.setRowCount(0)
+        __sorting_enabled = self.pa_tbl_wid.isSortingEnabled()
+        self.pa_tbl_wid.setSortingEnabled(False)
+        edge_list, cs = result
+        res_lst: List[PaEdge] = list()
+        for edge in edge_list:
+            ed = PaEdge(edge.geo_idx, edge.y_angel, edge.pt_start, edge.pt_end, edge.construct, edge.extern)
+            ed.edg_differences = edge.cons_filter(cs)
+            res_lst.append(ed)
+        for idx, item in enumerate(res_lst):
+            if self.base.cfg_only_valid and (len(item.edg_differences) == 0):
+                continue
+            self.pa_tbl_wid.insertRow(0)
+            w_item2 = QTableWidgetItem()
+            w_item2.setData(Qt.DisplayRole, item)
+            self.pa_tbl_wid.setItem(0, 0, w_item2)
+
+            t = Lookup.translate_ui_name(item.geo_idx)
+            fmt = f"{t} {item.y_angel:.1f}"
+            w_item = ColorTableItem(item.construct, item.extern, fmt)
+            self.pa_tbl_wid.setItem(0, 1, w_item)
+
+            sn, sc, se = self.split(item)
+            xp('norm', sn, 'const', sc, 'extern', se, **_pa)
+            wid = TableLabel(sn, sc, se)
+            self.pa_tbl_wid.setCellWidget(0, 2, wid)
+        self.pa_tbl_wid.setSortingEnabled(__sorting_enabled)
+        hh: QHeaderView = self.pa_tbl_wid.horizontalHeader()
+        hh.resizeSections(QHeaderView.ResizeToContents)
+        self.pa_tbl_wid.setUpdatesEnabled(True)
+
+    def split(self, pt: PaEdge):
+        res_n = list()
+        res_c = list()
+        res_e = list()
+        for x in pt.edg_differences:
+            x: GeoDiff
+            t = Lookup.translate_geo_idx(x.geo_idx)
+            s = f'{t}({x.difference:.2f})'
+            if x.extern:
+                res_e.append(s)
+            elif x.construct:
+                res_c.append(s)
+            else:
+                res_n.append(s)
+        return ' '.join(res_n), ' '.join(res_c), ' '.join(res_e)
 
     @flow
     def update_table(self):
-        self.ctrl_up = Controller(Worker(self.task_up, self.pa), self.on_result_up, name='Parallel')
+        # self.ctrl_up = Controller(Worker(self.task_up, self.pa), self.on_result_up, name='Parallel')
+        res = self.task_up(self.pa)
+        self.on_result_up(res)
 
     @flow
     def selected(self):
@@ -167,9 +180,11 @@ class PaGui:
         for item in indexes:
             pa: PaEdge = item.data()
             xp(f'row: {str(item.row())} idx: {pa.geo_idx} len: {pa.y_angel:.2f} {pa.edg_differences}', **_pa)
-            Gui.Selection.addSelection(doc_name, sk_name, f'Edge{pa.geo_idx + 1}')
+            t = Lookup.translate_ui_name(pa.geo_idx, False)
+            Gui.Selection.addSelection(doc_name, sk_name, f'{t}')
             for diff in pa.edg_differences:
-                Gui.Selection.addSelection(doc_name, sk_name, f'Edge{diff.geo_idx + 1}')
+                t = Lookup.translate_ui_name(diff.geo_idx, False)
+                Gui.Selection.addSelection(doc_name, sk_name, f'{t}')
 
 
 xps(__name__)

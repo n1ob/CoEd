@@ -177,6 +177,68 @@ class Cfg(CfgBase):
 
 
 @cfg_decorator
+class CfgTransient(CfgBase):
+    @flow(short=True)
+    def __init__(self):
+        super(CfgTransient, self).__init__()
+        xp('init CfgTransient', self, **_cf)
+        self.load()
+
+    @flow
+    def get(self, key):
+        if key in CfgTransient.__NAMES:
+            if key in self.data.keys():
+                return self.data[key]
+            else:
+                return self.default(key)
+            # return None
+        raise ValueError(key)
+
+    @flow
+    def set(self, key, val):
+        if key in CfgTransient.__NAMES:
+            self.data = {**self.data, **{key: val}}
+            self.save()
+            # self.data[key] = val
+        else:
+            raise ValueError(key)
+
+    @flow
+    def load(self):
+        self.data = self.load_delegate()
+        for x in self.data.keys():
+            xp('dbg', x, **_cf)
+
+    @flow
+    def save(self):
+        for x in self.data.keys():
+            xp('dbg', x, **_cf)
+        self.save_delegate(self.data)
+
+    @flow
+    def default(self, val):
+        if val == CfgTransient.CO_TOLERANCE:
+            return 0.1
+        elif val == CfgTransient.EQ_TOLERANCE:
+            return 0.1
+        elif val == CfgTransient.HV_TOLERANCE:
+            return 0.1
+        elif val == CfgTransient.PA_TOLERANCE:
+            return 0.1
+        elif val == CfgTransient.SHOW_ONLY_VALID:
+            return True
+        else:
+            return None
+
+    CO_TOLERANCE: str = 'co_tolerance'
+    EQ_TOLERANCE: str = 'eq_tolerance'
+    HV_TOLERANCE: str = 'hv_tolerance'
+    PA_TOLERANCE: str = 'pa_tolerance'
+    SHOW_ONLY_VALID: str = 'only_valid'
+    __NAMES: Set[str] = {CO_TOLERANCE, EQ_TOLERANCE, HV_TOLERANCE, PA_TOLERANCE, SHOW_ONLY_VALID}
+
+
+@cfg_decorator
 class CfgBasics(CfgBase):
 
     @flow(short=True)
@@ -380,6 +442,7 @@ class CfgColors(CfgBase):
     COLOR_XML_TXT = 'color_xml_txt'
     COLOR_XML_KEYWORD = 'color_xml_keyword'
     COLOR_CONSTRUCT = 'color_construct'
+    COLOR_EXTERN = 'color_extern'
 
     # material colors
     __MATERIAL_RED = '#b71c1c'  # red
@@ -416,6 +479,7 @@ class CfgColors(CfgBase):
     __CO_XML_TXT_DEF = __LIGHT_GREEN  # teal
     __CO_XML_KEYWORD_DEF = __LIGHT_GREEN_DARKER  # light blue
     __CO_CONSTRUCT_DEF = __LIGHT_PURPLE
+    __CO_EXTERN_DEF = __LIGHT_GREEN
 
     '''
     52/254/187 light green / string
@@ -429,7 +493,7 @@ class CfgColors(CfgBase):
     __NAMES: Dict[str, str] = {COLOR_XML_ELEM: __CO_XML_ELEM_DEF, COLOR_XML_ATTR: __CO_XML_ATTR_DEF,
                                COLOR_XML_VAL: __CO_XML_VAL_DEF, COLOR_XML_LN_CMT: __CO_XML_LN_CMT_DEF,
                                COLOR_XML_TXT: __CO_XML_TXT_DEF, COLOR_XML_KEYWORD: __CO_XML_KEYWORD_DEF,
-                               COLOR_CONSTRUCT: __CO_CONSTRUCT_DEF}
+                               COLOR_CONSTRUCT: __CO_CONSTRUCT_DEF, COLOR_EXTERN: __CO_EXTERN_DEF}
 
     xps(__qualname__)
 

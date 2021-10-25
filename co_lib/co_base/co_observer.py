@@ -4,11 +4,13 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from PySide2.QtCore import Signal, QObject
 
+from .co_cmn import ObjType
 from .co_logger import xp, _ob_a, _ob_g, _ob_s, flow, xps, seq_gen
 
 
 class EventProvider(QObject):
     add_selection = Signal(object, object, object, object)
+    add_selection_ex = Signal(object, object)
     clear_selection = Signal(object)
     doc_recomputed = Signal(object)
     obj_recomputed = Signal(object)
@@ -67,7 +69,7 @@ class AppDocumentObserver(object):
             if doc.ActiveObject is None:
                 xp('ActiveObject is None')
                 return
-            if doc.ActiveObject.TypeId == 'Sketcher::SketchObject':
+            if doc.ActiveObject.TypeId == ObjType.SKETCH_OBJECT:
                 observer_event_provider_get().undo_doc.emit(doc)
 
     def slotRedoDocument(self, doc):
@@ -84,7 +86,7 @@ class AppDocumentObserver(object):
         xp('TypeId', doc.TypeId, **_ob_a)
         if doc.TypeId == 'App::Document':
             xp(f'Objects: {doc.Objects} ActiveObject: {doc.ActiveObject}', **_ob_a)
-            if doc.ActiveObject and (doc.ActiveObject.TypeId == 'Sketcher::SketchObject'):
+            if doc.ActiveObject and (doc.ActiveObject.TypeId == ObjType.SKETCH_OBJECT):
                 observer_event_provider_get().open_transact.emit(doc, name)
                 pass
 
@@ -98,8 +100,8 @@ class AppDocumentObserver(object):
         doc: App.Document
         xp('TypeId', doc.TypeId, **_ob_a)
         if doc.TypeId == 'App::Document':
-            xp(f'Objects: {doc.Objects} ActiveObject: {doc.ActiveObject}', **_ob_a)
-            if doc.ActiveObject and (doc.ActiveObject.TypeId == 'Sketcher::SketchObject'):
+            xp(f'Objects: {doc.Objects} ActiveObject: {doc.ActiveObject}:{id(doc.ActiveObject)}', **_ob_a)
+            if doc.ActiveObject and (doc.ActiveObject.TypeId == ObjType.SKETCH_OBJECT):
                 observer_event_provider_get().commit_transact.emit(doc, name)
                 pass
 
@@ -128,7 +130,7 @@ class AppDocumentObserver(object):
 
     def slotRecomputedObject(self, obj):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotRecomputedObject', obj, **_ob_a)
-        if obj.TypeId == 'Sketcher::SketchObject':
+        if obj.TypeId == ObjType.SKETCH_OBJECT:
             if 'coed' in obj.PropertiesList:
                 xp('own source', obj.getPropertyByName('coed'), **_ob_a)
                 obj.removeProperty('coed')
@@ -190,17 +192,33 @@ class GuiDocumentObserver(object):
 
     def slotInEdit(self, obj):
         xp(f'{next(GuiDocumentObserver.seq):>3}', 'GuiDocumentObserver slotInEdit', obj, **_ob_g)
-        observer_event_provider_get().in_edit.emit(obj)
         obj: Gui.ViewProvider
         xp(f'slotInEdit {obj.TypeId}')
         xp(f'{obj.Object}')
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
+            observer_event_provider_get().blockSignals(False)
+        observer_event_provider_get().in_edit.emit(obj)
+
+    '''
+        if obj.TypeId == 'SketcherGui::ViewProviderSketch':
+            ed_info = Gui.ActiveDocument.InEditInfo
+            if ed_info is not None:
+                if ed_info[0].TypeId == 'Sketcher::SketchObject':
+                    if self.sketch is not ed_info[0]:
+                        self.base.sketch_set(ed_info[0])
+                        self.up_cur_table()
+                # self.show()
+                self.showNormal()
+    '''
 
     def slotResetEdit(self, obj):
         xp(f'{next(GuiDocumentObserver.seq):>3}', 'GuiDocumentObserver slotResetEdit', obj, **_ob_g)
-        observer_event_provider_get().reset_edit.emit(obj)
         obj: Gui.ViewProvider
         xp(f'slotResetEdit {obj.TypeId}')
         xp(f'{obj.Object}')
+        observer_event_provider_get().reset_edit.emit(obj)
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
+            observer_event_provider_get().blockSignals(True)
 
     seq = seq_gen(reset=1000)
 
@@ -217,13 +235,18 @@ class SelectionObserver:
     def addSelection(self, doc, obj, sub, pnt):  # Selection object
         xp(f'{next(SelectionObserver.seq):>3}', 'SelectionObserver addSelection doc:', str(doc), 'obj:', str(obj),
            'sub:', str(sub), 'pnt', str(pnt), **_ob_s)
-        for sel_ex in Gui.Selection.getSelectionEx():
+        if sub == '':
+            xp('sub empty, nothing to do')
+            return
+        sel_ex_lst = Gui.Selection.getSelectionEx()
+        for sel_ex in sel_ex_lst:
             xp('  sel_ex:', sel_ex, 'obj:', sel_ex.Object, **_ob_s)
             for sub_name in sel_ex.SubElementNames:
                 xp('    sub_name', sub_name, **_ob_s)
             for sub_obj in sel_ex.SubObjects:
                 xp('    sub_obj', repr(sub_obj), **_ob_s)
         observer_event_provider_get().add_selection.emit(doc, obj, sub, pnt)
+        observer_event_provider_get().add_selection_ex.emit(sel_ex_lst, pnt)
 
     @flow
     def removeSelection(self, doc, obj, sub):

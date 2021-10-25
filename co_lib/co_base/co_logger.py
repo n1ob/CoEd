@@ -130,8 +130,9 @@ class XpWorker:
     def __init__(self):
         self.queue = queue.Queue()
         self.thread_event = threading.Event()
-        self.thread = threading.Thread(target=self._xp, args=(self.thread_event,), daemon=True)
+        self.thread = threading.Thread(target=self._xp, args=(self.thread_event,), daemon=False)
         self.log_path = ''
+        self.keep_running = True
         self.run()
 
     def log_path_set(self, val: str):
@@ -141,7 +142,7 @@ class XpWorker:
     def _xp(self, ev: threading.Event):
         ev.wait()
         with open(self.log_path, 'a', 1) as file:
-            while True:
+            while not self.queue.empty() or self.keep_running:
                 args, kwargs = self.queue.get()
                 global GLB_LOG
                 add_ind: int = kwargs.pop('add_indent', 0)
@@ -326,8 +327,9 @@ GLB_HEADER: bool = True
 
 
 # '': use without kwargs
-_xp_topic('')
-# _xp_topic('', 'all')
+# _xp_topic('', 'obs_sel')
+# _xp_topic('')
+_xp_topic('', 'all')
 
 
 topics = {

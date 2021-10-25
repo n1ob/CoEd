@@ -3,17 +3,17 @@ from typing import List, Set, Tuple, Dict
 
 import FreeCAD as App
 import FreeCADGui as Gui
+import Sketcher
 from PySide2.QtCore import Qt, QModelIndex, QItemSelectionModel, Slot
-from PySide2.QtGui import QBrush
 from PySide2.QtWidgets import QWidget, QGroupBox, QLabel, QDoubleSpinBox, QPushButton, QTableWidget, QBoxLayout, \
     QVBoxLayout, QHBoxLayout, QTableWidgetItem, QProxyStyle, QStyle, QHeaderView
 
-from .co_co import CoPoints, CoPoint, GeoId
+from .co_co import CoPoints, CoPoint, GeoId, GeoIdDist
 from .. import co_impl, co_gui
-from ..co_base.co_cmn import GeoPt, fmt_vec, pt_typ_str, wait_cursor, Controller, Worker, MyLabel
+from ..co_base.co_cmn import GeoPt, fmt_vec, pt_typ_str, wait_cursor, TableLabel, ColorTableItem, ObjType
 from ..co_base.co_logger import flow, xp, _co, _ev, xps, Profile
 from ..co_base.co_lookup import Lookup
-from ..co_base.co_observer import observer_block
+from ..co_base.co_observer import observer_block, observer_event_provider_get
 
 _QL = QBoxLayout
 
@@ -21,6 +21,7 @@ _QL = QBoxLayout
 class CoGui:
     def __init__(self, base):
         self.base: co_gui.CoEdGui = base
+        self.sketch: Sketcher.SketchObject = self.base.sketch
         self.impl: co_impl.CoEd = self.base.base
         self.co: CoPoints = self.impl.co_points
         self.tab_co = QWidget(None)
@@ -36,6 +37,8 @@ class CoGui:
         self.co_btn_create.setDisabled(True)
         self.co_tbl_wid: QTableWidget = QTableWidget()
         self.tab_co.setLayout(self.lay_get())
+        self.evo = observer_event_provider_get()
+        self.evo.in_edit.connect(self.on_in_edit)
         self.ctrl_up = None
         self.ctrl_lock = Lock()
         self.update_table()
@@ -55,6 +58,27 @@ class CoGui:
                [QHBoxLayout(), self.co_lbl, self.co_dbl_sp_box, _QL.addStretch, self.co_btn_create],
                self.co_tbl_wid]]
         return self.base.lay_get(li)
+
+    @flow
+    def prep_table(self, obj: QGroupBox) -> QTableWidget:
+        table_widget = QTableWidget(obj)
+        table_widget.setColumnCount(3)
+        w_item = QTableWidgetItem(u"Point")
+        table_widget.setHorizontalHeaderItem(1, w_item)
+        w_item = QTableWidgetItem(u"Idx")
+        table_widget.setHorizontalHeaderItem(2, w_item)
+        self.base.prep_table(table_widget)
+        return table_widget
+
+    # -----------------------------------------------------------------------
+
+    @flow
+    @Slot(object)
+    def on_in_edit(self, obj):
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
+            ed_info = Gui.ActiveDocument.InEditInfo
+            if (ed_info is not None) and (ed_info[0].TypeId == ObjType.SKETCH_OBJECT):
+                self.sketch = ed_info[0]
 
     @flow
     @Slot(tuple, tuple)
@@ -82,16 +106,80 @@ class CoGui:
     def on_co_tbl_sel_chg(self):
         self.selected()
 
+    # -----------------------------------------------------------------------
+
     @flow
-    def prep_table(self, obj: QGroupBox) -> QTableWidget:
-        table_widget = QTableWidget(obj)
-        table_widget.setColumnCount(3)
-        w_item = QTableWidgetItem(u"Point")
-        table_widget.setHorizontalHeaderItem(1, w_item)
-        w_item = QTableWidgetItem(u"Idx")
-        table_widget.setHorizontalHeaderItem(2, w_item)
-        self.base.prep_table(table_widget)
-        return table_widget
+    def task_up(self, co):
+        pt_list: List[CoPoint] = co.tolerances
+        cs: Set[Tuple[GeoId, GeoId]] = co.cons_get()
+        return pt_list, cs
+
+    @flow(short=True)
+    def on_result_up(self, result):
+        self.co_tbl_wid.setUpdatesEnabled(False)
+        self.co_tbl_wid.setRowCount(0)
+        __sorting_enabled = self.co_tbl_wid.isSortingEnabled()
+        self.co_tbl_wid.setSortingEnabled(False)
+        pt_list, cs = result
+        res_lst: List[CoPoint] = list()
+        for pt in pt_list:
+            pt: CoPoint
+            p = CoPoint(pt.geo_id, pt.point, pt.construct, pt.extern)
+            p.pt_distance_lst = pt.cons_filter(cs)
+            res_lst.append(p)
+        self.log_filter(res_lst)
+        lo = Lookup(self.sketch)
+        for idx, pt in enumerate(res_lst):
+            if self.base.cfg_only_valid and (len(pt.pt_distance_lst) == 0):
+                continue
+            self.co_tbl_wid.insertRow(0)
+            w_item = QTableWidgetItem()
+            w_item.setData(Qt.DisplayRole, pt)
+            self.co_tbl_wid.setItem(0, 0, w_item)
+            # w_item = QTableWidgetItem()
+            # if pt.extern:
+            #     w_item.setForeground(QBrush(self.base.extern_color))
+            # elif pt.construct:
+            #     w_item.setForeground(QBrush(self.base.construct_color))
+            s1, s2 = lo.lookup_ui_names(GeoPt(pt.geo_id.idx, pt.geo_id.typ))
+            t = Lookup.translate_geo_idx(pt.geo_id.idx)
+            fmt = f"{s1} {t}.{pt_typ_str[pt.geo_id.typ]}"
+            # w_item.setText(fmt)
+            w_item = ColorTableItem(pt.construct, pt.extern, fmt)
+            self.co_tbl_wid.setItem(0, 1, w_item)
+            sn, sc, se = self.split(pt)
+            xp('norm', sn, 'const', sc, 'extern', se, **_co)
+            wid = TableLabel(sn, sc, se)
+            self.co_tbl_wid.setCellWidget(0, 2, wid)
+            xp('new row: Id', idx, fmt, sn, sc, **_co)
+        self.co_tbl_wid.setSortingEnabled(__sorting_enabled)
+        hh: QHeaderView = self.co_tbl_wid.horizontalHeader()
+        hh.resizeSections(QHeaderView.ResizeToContents)
+        vh: QHeaderView = self.co_tbl_wid.verticalHeader()
+        self.co_tbl_wid.setUpdatesEnabled(True)
+
+    def split(self, pt: CoPoint):
+        res_n = list()
+        res_c = list()
+        res_e = list()
+        for x in pt.pt_distance_lst:
+            x: GeoIdDist
+            t = Lookup.translate_geo_idx(x.geo_id.idx)
+            s = f'{t}.{pt_typ_str[x.geo_id.typ]}'
+            if x.extern:
+                res_e.append(s)
+            elif x.construct:
+                res_c.append(s)
+            else:
+                res_n.append(s)
+        return ' '.join(res_n), ' '.join(res_c), ' '.join(res_e)
+
+    @flow
+    def update_table(self):
+        # self.ctrl_up = Controller(Worker(self.task_up, self.co), self.on_result_up, name='Coincident')
+        res = self.task_up(self.co)
+        self.on_result_up(res)
+    # -----------------------------------------------------------------------
 
     @flow
     def create(self):
@@ -103,62 +191,6 @@ class CoGui:
                 xp(idx.row(), ':', idx.data(), **_co)
             self.co.create(create_list)
         self.update_table()
-
-    @flow
-    def task_up(self, co):
-        pt_list: List[CoPoint] = co.tolerances
-        cs: Set[Tuple[GeoId, GeoId]] = co.cons_get()
-        return pt_list, cs
-
-    @flow(short=True)
-    def on_result_up(self, result):
-        with self.ctrl_lock:
-            self.co_tbl_wid.setUpdatesEnabled(False)
-            self.co_tbl_wid.setRowCount(0)
-            __sorting_enabled = self.co_tbl_wid.isSortingEnabled()
-            self.co_tbl_wid.setSortingEnabled(False)
-            pt_list, cs = result
-            res_lst: List[CoPoint] = list()
-            for pt in pt_list:
-                pt: CoPoint
-                p = CoPoint(pt.geo_id, pt.point, pt.construct)
-                p.pt_distance_lst = pt.cons_filter(cs)
-                res_lst.append(p)
-            self.log_filter(res_lst)
-            lo = Lookup(self.impl.sketch)
-            for idx, pt in enumerate(res_lst):
-                if self.base.cfg_only_valid and (len(pt.pt_distance_lst) == 0):
-                    continue
-                self.co_tbl_wid.insertRow(0)
-                w_item = QTableWidgetItem()
-                w_item.setData(Qt.DisplayRole, pt)
-                self.co_tbl_wid.setItem(0, 0, w_item)
-                w_item = QTableWidgetItem()
-                if pt.construct:
-                    w_item.setForeground(QBrush(self.base.construct_color))
-                s1, s2 = lo.lookup(GeoPt(pt.geo_id.idx, pt.geo_id.typ))
-                fmt = f"{s1} {pt.geo_id.idx}.{pt_typ_str[pt.geo_id.typ]}"
-                w_item.setText(fmt)
-                self.co_tbl_wid.setItem(0, 1, w_item)
-                sn = ' '.join(f'{x.geo_id.idx}.{pt_typ_str[x.geo_id.typ]}'
-                              for x in pt.pt_distance_lst
-                              if not self.co.base.sketch.getConstruction(x.geo_id.idx))
-                sc = ' '.join(f'{x.geo_id.idx}.{pt_typ_str[x.geo_id.typ]}'
-                              for x in pt.pt_distance_lst
-                              if self.co.base.sketch.getConstruction(x.geo_id.idx))
-                xp('norm', sn, 'const', sc, **_co)
-                wid = MyLabel(self.base.construct_color.name(), sn, sc)
-                self.co_tbl_wid.setCellWidget(0, 2, wid)
-                xp('new row: Id', idx, fmt, sn, sc, **_co)
-            self.co_tbl_wid.setSortingEnabled(__sorting_enabled)
-            hh: QHeaderView = self.co_tbl_wid.horizontalHeader()
-            hh.resizeSections(QHeaderView.ResizeToContents)
-            vh: QHeaderView = self.co_tbl_wid.verticalHeader()
-            self.co_tbl_wid.setUpdatesEnabled(True)
-
-    @flow
-    def update_table(self):
-        self.ctrl_up = Controller(Worker(self.task_up, self.co), self.on_result_up, name='Coincident')
 
     @flow
     def selected(self):
@@ -197,7 +229,7 @@ class CoGui:
         idx = 0
         res: Dict[Tuple[int, int], int] = dict()
         while True:
-            geo, pos = self.impl.sketch.getGeoVertexIndex(idx)
+            geo, pos = self.sketch.getGeoVertexIndex(idx)
             if (geo == -2000) and (pos == 0):
                 break
             res[(geo, pos)] = idx

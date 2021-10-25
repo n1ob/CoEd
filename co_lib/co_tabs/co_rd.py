@@ -3,13 +3,14 @@ from typing import List, Set
 import FreeCAD as App
 import Part
 import Sketcher
-from PySide2.QtCore import Signal, QObject
+from PySide2.QtCore import Signal, QObject, Slot
 
 from . import co_cs
 from .. import co_impl
-from ..co_base.co_cmn import fmt_vec
+from ..co_base.co_cmn import fmt_vec, GeoType, ObjType
 from ..co_base.co_flag import Dirty
 from ..co_base.co_logger import flow, xp, _rd, _ev, xps
+from ..co_base.co_observer import observer_event_provider_get
 
 
 class RdCircle:
@@ -37,8 +38,11 @@ class RdCircles(QObject):
         super(RdCircles, self).__init__()
         self.__init = False
         self.base: co_impl.CoEd = base
+        self.sketch: Sketcher.SketchObject = self.base.sketch
         self.circles: List[RdCircle] = list()
         self.radius: float = 1
+        self.evo = observer_event_provider_get()
+        self.evo.in_edit.connect(self.on_in_edit)
         self.__init = True
 
     @property
@@ -63,13 +67,21 @@ class RdCircles(QObject):
         self._circles = value
 
     @flow
+    @Slot(object)
+    def on_in_edit(self, obj):
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
+            ed_info = App.Gui.ActiveDocument.InEditInfo
+            if (ed_info is not None) and (ed_info[0].TypeId == ObjType.SKETCH_OBJECT):
+                self.sketch = ed_info[0]
+
+    @flow
     def circles_update(self):
         self._circles.clear()
-        geo_list = self.base.sketch.Geometry
+        geo_list = self.sketch.Geometry
         x: Part.Circle
-        c_list: List[RdCircle] = [RdCircle(idx, App.Vector(x.Center), x.AngleXU, x.Radius, x.TypeId, self.base.sketch.getConstruction(idx))
+        c_list: List[RdCircle] = [RdCircle(idx, App.Vector(x.Center), x.AngleXU, x.Radius, x.TypeId, self.sketch.getConstruction(idx))
                                   for idx, x in enumerate(geo_list)
-                                  if (x.TypeId == 'Part::GeomCircle') or (x.TypeId == 'Part::GeomArcOfCircle')]
+                                  if (x.TypeId == GeoType.CIRCLE) or (x.TypeId == GeoType.ARC_OF_CIRCLE)]
         xp(c_list, **_rd)
         self._circles = c_list
 
@@ -88,9 +100,9 @@ class RdCircles(QObject):
                     xp('created.emit', cir.type_id, cir.geo_idx, cir.radius, **_ev)
                     self.created.emit(cir.geo_idx, cir.radius)
             doc.openTransaction('coed: Diameter constraint')
-            self.base.sketch.addConstraint(con_list)
+            self.sketch.addConstraint(con_list)
             doc.commitTransaction()
-            sk: Sketcher.SketchObject = self.base.sketch
+            sk: Sketcher.SketchObject = self.sketch
             sk.addProperty('App::PropertyString', 'coed')
             sk.coed = 'rad_recompute'
             doc.openTransaction('coed: obj recompute')

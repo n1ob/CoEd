@@ -4,15 +4,16 @@ import unittest
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
+import RegularPolygon
 import Sketcher
 from PySide2.QtWidgets import QApplication, QWidget
 
-from co_lib.co_base.co_config import Cfg
-from co_lib.co_base.co_observer import register, unregister
+from co_lib.co_base.co_observer import register
 from co_main import main_g
 
 DOC = "Test"
 SKETCH = "Sketch"
+SKETCH2 = "Sketch2"
 
 
 def add_geo(o: object, b: bool = False):
@@ -33,11 +34,8 @@ def add_con(o: object):
 
 # todo test cases, test cases, test cases
 class MyTest(unittest.TestCase):
-    def setUp(self) -> None:
-        print("setUp")
-        self.app = QApplication()
-        self.ex = QWidget()
-        Gui.showMainWindow()
+
+    def single_sketch(self):
         App.newDocument(DOC)
         Gui.activeDocument().activeView().viewDefaultOrientation()
         Gui.ActiveDocument.ActiveView.setAxisCross(True)
@@ -49,7 +47,14 @@ class MyTest(unittest.TestCase):
         Gui.activeDocument().setEdit(SKETCH)
         self.ActiveSketch = App.getDocument(DOC).getObject(SKETCH)
 
+    def setUp(self) -> None:
+        print("setUp")
+        self.app = QApplication()
+        self.ex = QWidget()
+        Gui.showMainWindow()
+
     def testNew(self):
+        self.single_sketch()
         add_geo(Part.LineSegment(App.Vector(-6.458662, 8.742734, 0), App.Vector(4.249124, -2.602964, 0)), False)
         add_geo(Part.LineSegment(App.Vector(10.000000, 10.000000, 0), App.Vector(5.297122, -3.000000, 0)), False)
         add_geo(Part.LineSegment(App.Vector(4.476952, -3.650960, 0), App.Vector(1.788612, -11.000000, 0)), False)
@@ -57,9 +62,10 @@ class MyTest(unittest.TestCase):
         App.getDocument(DOC).recompute()
         self.ex = main_g(self.ActiveSketch, self.app)
         self.app.exec_()
-        Cfg().save()
+        # Cfg().save()
 
     def testDisplayProps(self):
+        self.single_sketch()
         print('App.activeDocument()', App.activeDocument())
         print('App.ActiveDocument', App.ActiveDocument)
         print('App.activeDocument().__class__', App.activeDocument().__class__)
@@ -85,6 +91,7 @@ class MyTest(unittest.TestCase):
         #     print('xxxx')
 
     def testConstraint(self):
+        self.single_sketch()
         print("testConstraint")
         add_geo(Part.LineSegment(App.Vector(2.452832, 4.486332, 0), App.Vector(3.533459, 1.000000, 0)), False)
         add_geo(Part.LineSegment(App.Vector(2.582505, 5.307610, 0), App.Vector(7.466946, 6.000000, 0)), False)
@@ -134,9 +141,10 @@ class MyTest(unittest.TestCase):
         register()
         self.ex = main_g(self.ActiveSketch, self.app)
         self.app.exec_()
-        Cfg().save()
+        # Cfg().save()
 
     def testCoincident(self):
+        self.single_sketch()
         add_geo(Part.LineSegment(App.Vector(-8.0, -5.0, 0.0), App.Vector(4.0, 7.0, 0.0)), False)
         add_geo(Part.LineSegment(App.Vector(5.0, 7.0, 0.0), App.Vector(7.0, -8.0, 0.0)), False)
         add_geo(Part.LineSegment(App.Vector(-8.0, -6.0, 0.0), App.Vector(7.0, -9.0, 0.0)), False)
@@ -151,9 +159,10 @@ class MyTest(unittest.TestCase):
         register()
         self.ex = main_g(self.ActiveSketch, self.app)
         self.app.exec_()
-        Cfg().save()
+        # Cfg().save()
 
     def testCircle(self):
+        self.single_sketch()
         add_geo(Part.Circle(App.Vector(4.5, 3.5, 0), App.Vector(0, 0, 1), 2))
         add_geo(Part.LineSegment(App.Vector(5.0, 7.0, 0.0), App.Vector(7.0, 8.0, 0.0)), False)
         add_geo(Part.ArcOfCircle(Part.Circle(App.Vector(6.000000, 5.000000, 0), App.Vector(0, 0, 1), 2.000000),
@@ -164,9 +173,10 @@ class MyTest(unittest.TestCase):
         register()
         self.ex = main_g(self.ActiveSketch, self.app)
         self.app.exec_()
-        Cfg().save()
+        # Cfg().save()
 
     def testParallel(self):
+        self.single_sketch()
         a = [
             ((5.30871, 5.55288, 0), (1.72666, 1.35812, 0)),
             ((3.2369, 6.74799, 0), (1.12643, 1.65162, 0)),
@@ -196,9 +206,10 @@ class MyTest(unittest.TestCase):
         register()
         self.ex = main_g(self.ActiveSketch, self.app)
         self.app.exec_()
-        Cfg().save()
+        # Cfg().save()
 
     def testRandom(self):
+        self.single_sketch()
         for x in range(100):
             x = App.Vector(random.uniform(-20, 20), random.uniform(-20, 20), 0)
             y = App.Vector(random.uniform(-20, 20), random.uniform(-20, 20), 0)
@@ -208,34 +219,71 @@ class MyTest(unittest.TestCase):
         register()
         self.ex = main_g(self.ActiveSketch, self.app)
         self.app.exec_()
-        Cfg().save()
+        # Cfg().save()
+
+    def testComplex(self):
+
+        App.newDocument(DOC)
+        App.activeDocument().addObject('Sketcher::SketchObject', SKETCH)
+        App.activeDocument().Sketch.Placement = App.Placement(App.Vector(0.000000, 0.000000, 0.000000),
+                                                              App.Rotation(0.000000, 0.000000, 0.000000, 1.000000))
+        App.activeDocument().Sketch.MapMode = "Deactivated"
+
+        geoList = []
+        geoList.append(Part.LineSegment(App.Vector(3.000000, 2.000000, 0), App.Vector(8.000000, 2.000000, 0)))
+        geoList.append(Part.LineSegment(App.Vector(8.000000, 2.000000, 0), App.Vector(8.000000, 6.000000, 0)))
+        geoList.append(Part.LineSegment(App.Vector(8.000000, 6.000000, 0), App.Vector(3.000000, 6.000000, 0)))
+        geoList.append(Part.LineSegment(App.Vector(3.000000, 6.000000, 0), App.Vector(3.000000, 2.000000, 0)))
+        App.getDocument(DOC).getObject(SKETCH).addGeometry(geoList, False)
+        conList = []
+        conList.append(Sketcher.Constraint('Coincident', 0, 2, 1, 1))
+        conList.append(Sketcher.Constraint('Coincident', 1, 2, 2, 1))
+        conList.append(Sketcher.Constraint('Coincident', 2, 2, 3, 1))
+        conList.append(Sketcher.Constraint('Coincident', 3, 2, 0, 1))
+        conList.append(Sketcher.Constraint('Horizontal', 0))
+        conList.append(Sketcher.Constraint('Horizontal', 2))
+        conList.append(Sketcher.Constraint('Vertical', 1))
+        conList.append(Sketcher.Constraint('Vertical', 3))
+        App.getDocument(DOC).getObject('Sketch').addConstraint(conList)
+
+        add_geo(Part.Circle(App.Vector(4.5, 3.5, 0), App.Vector(0, 0, 1), 2))
+        add_geo(Part.LineSegment(App.Vector(5.0, 7.0, 0.0), App.Vector(7.0, 8.0, 0.0)), False)
+        add_geo(Part.ArcOfCircle(Part.Circle(App.Vector(6.000000, 5.000000, 0), App.Vector(0, 0, 1), 2.000000),
+                                 -1.570796, 0.000000), False)
+        add_geo(Part.ArcOfCircle(Part.Circle(App.Vector(4.500000, 6.001692, 0), App.Vector(0, 0, 1), 1.500001),
+                                 6.282057, 3.142721), False)
+        App.getDocument(DOC).recompute()
+        App.activeDocument().addObject('Sketcher::SketchObject', SKETCH2)
+        App.activeDocument().Sketch2.MapMode = "ObjectXY"
+        App.activeDocument().Sketch2.Support = [(App.getDocument(DOC).getObject(SKETCH), '')]
+        App.activeDocument().recompute()
+
+        RegularPolygon.makeRegularPolygon(App.getDocument(DOC).getObject(SKETCH2), 6,
+                                                     App.Vector(11.000000, 4.476574, 0),
+                                                     App.Vector(11.744776, 2.000000, 0), False)
+        App.ActiveDocument.recompute()
+        App.getDocument(DOC).getObject(SKETCH2).addExternal(SKETCH, "Edge2")
+        App.ActiveDocument.recompute()
+        App.getDocument(DOC).getObject(SKETCH2).addConstraint(Sketcher.Constraint('PointOnObject', 3, 2, -3))
+
+        Gui.activeDocument().activeView().viewDefaultOrientation()
+        Gui.ActiveDocument.ActiveView.setAxisCross(True)
+        Gui.activateWorkbench("SketcherWorkbench")
+        Gui.activeDocument().setEdit(SKETCH2)
+        self.ActiveSketch = App.getDocument(DOC).getObject(SKETCH2)
+
+        # App.getDocument(DOC).recompute()
+        register()
+        self.ex = main_g(self.ActiveSketch, self.app)
+        self.app.exec_()
+        # Cfg().save()
 
     def tearDown(self) -> None:
-        # file.close()
         print("tearDown")
-        unregister()  # Uninstall the resident function
-        App.closeDocument(DOC)
+        # unregister()  # Uninstall the resident function
+        # App.closeDocument(DOC)
+        # self.app.exit(0)
 
-    '''
-    >> > Gui.runCommand('Sketcher_CompCreateArc', 0)
-    >> > App.getDocument('blub').getObject('Sketch').addGeometry(
-        Part.ArcOfCircle(Part.Circle(App.Vector(6.000000, 5.000000, 0), App.Vector(0, 0, 1), 2.000000), -1.570796,
-                         0.000000), False)
-    
-    ArcOfCircle (Radius : 2, Position : (6, 5, 0), Direction : (0, 0, 1), Parameter : (4.71239, 6.28319))
-    >>> arc.Content
-    '<GeoExtensions count="1">\n
-        <GeoExtension type="Sketcher::SketchGeometryExtension" internalGeometryType="0" geometryModeFlags="00000000000000000000000000000000"/>\n
-    </GeoExtensions>\n
-    <ArcOfCircle CenterX="6" CenterY="5" CenterZ="0" NormalX="0" NormalY="0" NormalZ="1" AngleXU="-0" Radius="2" StartAngle="4.71239" EndAngle="6.28319"/>\n'
-    >>> 
-    'Part::GeomArcOfCircle'
-    
-    >>> App.getDocument('blub').getObject('Sketch').addGeometry(
-    Part.ArcOfCircle(Part.Circle(App.Vector(4.500000,6.001692,0),App.Vector(0,0,1),1.500001),6.282057,3.142721),False)
-    >>> 
-    
-    '''
 
     # App.activeDocument() <Document object at 000001D763812470>
     # App.ActiveDocument <Document object at 000001D763812470>
@@ -279,127 +327,6 @@ class MyTest(unittest.TestCase):
     # UserParameter  =  C:\ Users\red\AppData\Roaming\FreeCAD\user.cfg
     # Verbose  =
 
-    # <Document SchemaVersion="4" ProgramVersion="0.19R24291 (Git)" FileVersion="1">
-    #     <Properties Count="15" TransientCount="3">
-    #         <_Property name="FileName" type="App::PropertyString" status="50331648"/>
-    #         <_Property name="Tip" type="App::PropertyLink" status="33554433"/>
-    #         <_Property name="TransientDir" type="App::PropertyString" status="50331649"/>
-    #         <Property name="Comment" type="App::PropertyString">
-    #             <String value=""/>
-    #         </Property>
-    #         <Property name="Company" type="App::PropertyString">
-    #             <String value=""/>
-    #         </Property>
-    #         <Property name="CreatedBy" type="App::PropertyString">
-    #             <String value=""/>
-    #         </Property>
-    #         <Property name="CreationDate" type="App::PropertyString" status="16777217">
-    #             <String value="2021-08-20T02:09:38Z"/>
-    #         </Property>
-    #         <Property name="Id" type="App::PropertyString">
-    #             <String value=""/>
-    #         </Property>
-    #         <Property name="Label" type="App::PropertyString" status="1">
-    #             <String value="Test"/>
-    #         </Property>
-    #         <Property name="LastModifiedBy" type="App::PropertyString">
-    #             <String value=""/>
-    #         </Property>
-    #         <Property name="LastModifiedDate" type="App::PropertyString" status="16777217">
-    #             <String value="Unknown"/>
-    #         </Property>
-    #         <Property name="License" type="App::PropertyString" status="1">
-    #             <String value="All rights reserved"/>
-    #         </Property>
-    #         <Property name="LicenseURL" type="App::PropertyString" status="1">
-    #             <String value="http://en.wikipedia.org/wiki/All_rights_reserved"/>
-    #         </Property>
-    #         <Property name="Material" type="App::PropertyMap">
-    #             <Map count="0">
-    #             </Map>
-    #         </Property>
-    #         <Property name="Meta" type="App::PropertyMap">
-    #             <Map count="0">
-    #             </Map>
-    #         </Property>
-    #         <Property name="ShowHidden" type="App::PropertyBool" status="1">
-    #             <Bool value="false"/>
-    #         </Property>
-    #         <Property name="TipName" type="App::PropertyString" status="83886080">
-    #             <String value=""/>
-    #         </Property>
-    #         <Property name="Uid" type="App::PropertyUUID" status="16777217">
-    #             <Uuid value="84809aae-60ff-4370-bd91-2cc3345fd5b7"/>
-    #         </Property>
-    #     </Properties>
-    #     <Objects Count="1" Dependencies="1">
-    #         <ObjectDeps Name="Sketch" Count="0"/>
-    #         <Object type="Sketcher::SketchObject" name="Sketch" id="3376" />
-    #     </Objects>
-    #     <ObjectData Count="1">
-    #         <Object name="Sketch" Extensions="True">
-    #             <Extensions Count="1">
-    #                 <Extension type="Part::AttachExtension" name="AttachExtension">
-    #                 </Extension>
-    #             </Extensions>
-    #             <Properties Count="16" TransientCount="0">
-    #                 <Property name="AttacherType" type="App::PropertyString" status="8">
-    #                     <String value="Attacher::AttachEnginePlane"/>
-    #                 </Property>
-    #                 <Property name="AttachmentOffset" type="App::PropertyPlacement" status="8">
-    #                     <PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1" A="0" Ox="0" Oy="0" Oz="1"/>
-    #                 </Property>
-    #                 <Property name="Constraints" type="Sketcher::PropertyConstraintList">
-    #                     <ConstraintList count="0">
-    #                     </ConstraintList>
-    #                 </Property>
-    #                 <Property name="ExpressionEngine" type="App::PropertyExpressionEngine" status="67108864">
-    #                     <ExpressionEngine count="0">
-    #                     </ExpressionEngine>
-    #                 </Property>
-    #                 <Property name="ExternalGeometry" type="App::PropertyLinkSubList">
-    #                     <LinkSubList count="0">
-    #                     </LinkSubList>
-    #                 </Property>
-    #                 <Property name="FullyConstrained" type="App::PropertyBool" status="218103808">
-    #                     <Bool value="true"/>
-    #                 </Property>
-    #                 <Property name="Geometry" type="Part::PropertyGeometryList" status="8192">
-    #                     <GeometryList count="0">
-    #                     </GeometryList>
-    #                 </Property>
-    #                 <Property name="Label" type="App::PropertyString" status="134217728">
-    #                     <String value="Sketch"/>
-    #                 </Property>
-    #                 <Property name="Label2" type="App::PropertyString" status="67108992">
-    #                     <String value=""/>
-    #                 </Property>
-    #                 <Property name="MapMode" type="App::PropertyEnumeration">
-    #                     <Integer value="0"/>
-    #                 </Property>
-    #                 <Property name="MapPathParameter" type="App::PropertyFloat" status="8">
-    #                     <Float value="0"/>
-    #                 </Property>
-    #                 <Property name="MapReversed" type="App::PropertyBool" status="8">
-    #                     <Bool value="false"/>
-    #                 </Property>
-    #                 <Property name="Placement" type="App::PropertyPlacement" status="8388608">
-    #                     <PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1" A="0" Ox="0" Oy="0" Oz="1"/>
-    #                 </Property>
-    #                 <Property name="Shape" type="Part::PropertyPartShape">
-    #                 </Property>
-    #                 <Property name="Support" type="App::PropertyLinkSubList">
-    #                     <LinkSubList count="0">
-    #                     </LinkSubList>
-    #                 </Property>
-    #                 <Property name="Visibility" type="App::PropertyBool" status="648">
-    #                     <Bool value="true"/>
-    #                 </Property>
-    #             </Properties>
-    #         </Object>
-    #     </ObjectData>
-    # </Document>
-    #
 
     # <Constrain Name="" Type="1" Value="0" First="1" FirstPos="1" Second="0" SecondPos="1" Third="-2000" ThirdPos="0" LabelDistance="10" LabelPosition="0" IsDriving="1" IsInVirtualSpace="0" IsActive="1" />
     # <Constrain Name="" Type="13" Value="0" First="1" FirstPos="2" Second="2" SecondPos="0" Third="-2000" ThirdPos="0" LabelDistance="10" LabelPosition="0" IsDriving="1" IsInVirtualSpace="0" IsActive="1" />

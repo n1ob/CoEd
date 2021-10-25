@@ -2,15 +2,18 @@ from typing import List, Dict, Tuple, Callable
 
 import FreeCAD as App
 import FreeCADGui as Gui
+import Sketcher
 from PySide2.QtCore import Qt, Slot, QTimer
 from PySide2.QtGui import QFont, QColor
-from PySide2.QtWidgets import QComboBox, QWidget, QVBoxLayout, QPlainTextEdit, QApplication, QPushButton, \
+from PySide2.QtWidgets import QComboBox, QWidget, QVBoxLayout, QPlainTextEdit, QPushButton, \
     QTabWidget, QLabel, QTableWidget, QSpinBox, \
     QAbstractItemView, QHeaderView, QGroupBox, QDoubleSpinBox, QCheckBox, QBoxLayout, QLineEdit
 
-from .co_base.co_logger import xp, flow, _ly, xps, _fl, _ob_s, _ob_a, stack_tracer
-from .co_base.co_observer import observer_event_provider_get
-from .co_base.co_style import my_style
+from co_lib.co_base.co_cmn import ObjType
+from co_lib.co_base.co_config import Cfg
+from co_lib.co_base.co_lookup import Lookup
+from .co_base.co_logger import xp, flow, _ly, xps, _fl, _ob_s, _ob_a, stack_tracer, xp_worker
+from .co_base.co_observer import observer_event_provider_get, unregister
 from .co_impl import CoEd
 from .co_tabs.co_cfg_gui import CfgGui
 from .co_tabs.co_co_gui import CoGui
@@ -48,6 +51,7 @@ class CoEdGui(QWidget):
     def __init__(self, base: CoEd, parent=None):
         super().__init__(parent)
         self.base: CoEd = base
+        self.sketch: Sketcher.SketchObject = self.base.sketch
         self.evo = observer_event_provider_get()
         self.evo.add_selection.connect(self.on_add_selection)
         self.evo.clear_selection.connect(self.on_clear_selection)
@@ -64,6 +68,7 @@ class CoEdGui(QWidget):
         self.geo_edt_font = None
         self.cfg_edt_font = None
         self.construct_color: QColor = QColor()
+        self.extern_color: QColor = QColor()
         self.cfg_gui = CfgGui(self)
         self.geo_gui = GeoGui(self)
         self.cs_gui = CsGui(self)
@@ -84,7 +89,17 @@ class CoEdGui(QWidget):
         self.tabs.addTab(self.geo_gui.tab_geo, "Geo")
         self.tabs.addTab(self.cfg_gui.tab_cfg, "Cfg")
         self.tabs.currentChanged.connect(self.on_cur_tab_chg)
-
+        self.info: Dict[int, Tuple[QTableWidget, Callable]] = {
+            0: (self.cs_gui.cons_tbl_wid, self.cs_gui.update_table),
+            1: (self.co_gui.co_tbl_wid, self.co_gui.update_table),
+            2: (self.hv_gui.hv_tbl_wid, self.hv_gui.update_table),
+            3: (self.rd_gui.rad_tbl_wid, self.rd_gui.update_table),
+            4: (self.xy_gui.xy_tbl_wid, self.xy_gui.update_table),
+            5: (self.eq_gui.eq_tbl_wid, self.eq_gui.update_table),
+            6: (self.pa_gui.pa_tbl_wid, self.pa_gui.update_table),
+            7: (None, None),
+            8: (None, None),
+        }
         main_layout = QVBoxLayout()
         main_layout.addWidget(self.tabs)
         self.setLayout(main_layout)
@@ -95,6 +110,13 @@ class CoEdGui(QWidget):
         self.sk_hint_tim = QTimer()
         self.sk_hint_tim.setSingleShot(True)
         self.sk_hint_tim.timeout.connect(self.on_timer)
+
+    def closeEvent(self, event):
+        super().closeEvent(event)
+        Cfg().save()
+        unregister()  # Uninstall the resident function
+        xp_worker.keep_running = False
+        exit(0)
 
     @staticmethod
     def db_s_box_get(val, prec, step, func):
@@ -136,10 +158,11 @@ class CoEdGui(QWidget):
         return layout
 
     # -------------------------------------------------------------------------
+
     @flow
     @Slot(object, str)
     def on_open_transact(self, doc, name):
-        xp(f'on_open_transact doc: {doc} name: {name}', **_ob_s)
+        xp(f'NOP on_open_transact doc: {doc} name: {name}', **_ob_s)
 
     @flow
     @Slot(object, str)
@@ -156,7 +179,7 @@ class CoEdGui(QWidget):
         xp(f'on_undo_doc doc: {doc}', **_ob_a)
         if doc.TypeId == 'App::Document':
             doc: App.Document
-            if doc.ActiveObject.TypeId == 'Sketcher::SketchObject':
+            if doc.ActiveObject.TypeId == ObjType.SKETCH_OBJECT:
                 self.base.flags.all()
                 self.up_cur_table()
 
@@ -164,29 +187,16 @@ class CoEdGui(QWidget):
     @Slot(object)
     def on_in_edit(self, obj):
         xp('on_in_edit', obj, obj.TypeId)
-        if obj.TypeId == 'SketcherGui::ViewProviderSketch':
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
             ed_info = Gui.ActiveDocument.InEditInfo
             xp('ed_info', ed_info)
-            if ed_info is not None:
-                if ed_info[0].TypeId == 'Sketcher::SketchObject':
-                    xp('self.base.sketch is ed_info', self.base.sketch is ed_info[0])
-                    if self.base.sketch is not ed_info[0]:
-                        self.base.sketch = ed_info[0]
-                        xps()
-                        self.up_cur_table()
-                self.show()
-
-    @flow
-    @Slot(object)
-    def on_obj_recomputed(self, obj):
-        xp(f'on_obj_recomputed obj:', str(obj), **_ob_s)
-
-    @flow
-    @Slot()
-    def on_timer(self):
-        if self.sk_hint is not None:
-            self.sk_hint: SkHint
-            self.sk_hint.close()
+            if (ed_info is not None) and (ed_info[0].TypeId == ObjType.SKETCH_OBJECT):
+                xp('ed_info[0]', id(ed_info[0]), 'self.sketch', id(self.sketch))
+                xp('self.sketch is ed_info', self.sketch is ed_info[0])
+                if self.sketch is not ed_info[0]:
+                    self.up_cur_table()
+            # self.show()
+            self.showNormal()
 
     @flow
     @Slot(object)
@@ -194,8 +204,9 @@ class CoEdGui(QWidget):
         xp('on_reset_edit', obj, obj.TypeId)
         ed_info = Gui.ActiveDocument.InEditInfo
         xp('ed_info', ed_info)
-        if obj.TypeId == 'SketcherGui::ViewProviderSketch':
-            self.hide()
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
+            # self.hide()
+            self.showMinimized()
             self.sk_hint = SkHint()
             pos = self.sk_hint.pos()
             if pos.x() < 0:
@@ -205,6 +216,18 @@ class CoEdGui(QWidget):
             self.sk_hint.move(pos)
             self.sk_hint.show()
             self.sk_hint_tim.start(3000)
+
+    @flow
+    @Slot(object)
+    def on_obj_recomputed(self, obj):
+        xp(f'NOP on_obj_recomputed obj:', str(obj), **_ob_s)
+
+    @flow
+    @Slot()
+    def on_timer(self):
+        if self.sk_hint is not None:
+            self.sk_hint: SkHint
+            self.sk_hint.close()
 
     @flow
     @Slot(object, object, object, object)
@@ -220,42 +243,26 @@ class CoEdGui(QWidget):
 
     @flow
     def up_cur_table(self):
-        info: Dict[int, Tuple[QTableWidget, Callable]] = {
-            0: (self.cs_gui.cons_tbl_wid, self.cs_gui.update_table),
-            1: (self.co_gui.co_tbl_wid, self.co_gui.update_table),
-            2: (self.hv_gui.hv_tbl_wid, self.hv_gui.update_table),
-            3: (self.rd_gui.rad_tbl_wid, self.rd_gui.update_table),
-            4: (self.xy_gui.xy_tbl_wid, self.xy_gui.update_table),
-            5: (self.eq_gui.eq_tbl_wid, self.eq_gui.update_table),
-            6: (self.pa_gui.pa_tbl_wid, self.pa_gui.update_table),
-        }
         try:
             tbl_idx = self.tabs.currentIndex()
             if tbl_idx in range(7):
-                info.get(tbl_idx)[1]()
+                self.info.get(tbl_idx)[1]()
         except Exception as ex:
             xp(ex)
             stack_tracer()
+            raise
 
     @flow
     def on_cur_tab_chg(self, index: int):
         xp('cur_tab:', index, **_ly)
-        info: Dict[int, Tuple[QTableWidget, Callable]] = {
-            0: (self.cs_gui.cons_tbl_wid, self.cs_gui.update_table),
-            1: (self.co_gui.co_tbl_wid, self.co_gui.update_table),
-            2: (self.hv_gui.hv_tbl_wid, self.hv_gui.update_table),
-            3: (self.rd_gui.rad_tbl_wid, self.rd_gui.update_table),
-            4: (self.xy_gui.xy_tbl_wid, self.xy_gui.update_table),
-            5: (self.eq_gui.eq_tbl_wid, self.eq_gui.update_table),
-            6: (self.pa_gui.pa_tbl_wid, self.pa_gui.update_table),
-        }
         if index in range(7):
-            tbl = info.get(index)[0]
+            tbl = self.info.get(index)[0]
             tbl.blockSignals(True)
             tbl.clearSelection()
             tbl.blockSignals(False)
-            info.get(index)[1]()
+            self.info.get(index)[1]()
 
+    @flow
     def tbl_clear_select(self):
         switcher: Dict[int, QTableWidget] = {
             0: self.cs_gui.cons_tbl_wid,
@@ -266,10 +273,12 @@ class CoEdGui(QWidget):
             5: self.eq_gui.eq_tbl_wid,
             6: self.pa_gui.pa_tbl_wid
         }
-        for tbl in switcher.values():
-            tbl.blockSignals(True)
-            tbl.clearSelection()
-            tbl.blockSignals(False)
+        for tbl in self.info.values():
+            if tbl[0] is None:
+                continue
+            tbl[0].blockSignals(True)
+            tbl[0].clearSelection()
+            tbl[0].blockSignals(False)
 
     @flow
     def tbl_clear_select_on_add(self, shape, pnt):
@@ -278,21 +287,12 @@ class CoEdGui(QWidget):
             from_gui = False
         if from_gui:
             self.tbl_clear_select()
-        if shape.find('Vertex') != -1:
-            no = int(shape[6:])
-            typ = 'Vertex'
-            geo, pos = self.base.sketch.getGeoVertexIndex(no)
+        typ, no = Lookup.deconstruct_ui_name(shape)
+        if typ == 'Vertex':
+            geo, pos = self.sketch.getGeoVertexIndex(no)
             xp(f'received: gui: {from_gui} {typ} {no} geo: ({geo}.{pos})', **_fl)
-        elif shape.find('Edge') != -1:
-            no = int(shape[4:])
-            typ = 'Edge'
-            xp(f'received: gui: {from_gui} {typ} {no}', **_fl)
-        elif shape.find('Constraint') != -1:
-            no = int(shape[10:])
-            typ = 'Constraint'
-            xp(f'received: gui: {from_gui} {typ} {no}', **_fl)
         else:
-            xp(f'received ?: gui: {from_gui} {shape} {pnt}', **_fl)
+            xp(f'received: gui: {from_gui} {typ} {no}', **_fl)
 
     @flow
     def prep_table(self, tbl: QTableWidget):

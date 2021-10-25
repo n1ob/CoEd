@@ -3,13 +3,15 @@ from typing import Set, NamedTuple, List, Tuple
 import FreeCAD as App
 import Part
 import Sketcher
-from PySide2.QtCore import Signal, QObject
+from PySide2.QtCore import Signal, QObject, Slot
 
 from . import co_cs
 from .. import co_impl
-from ..co_base.co_cmn import fmt_vec, pt_typ_str
+from ..co_base.co_cmn import fmt_vec, pt_typ_str, GeoType, ConType, ObjType
 from ..co_base.co_flag import Dirty
 from ..co_base.co_logger import flow, xp, _xy, _ev, xps
+from ..co_base.co_lookup import Lookup
+from ..co_base.co_observer import observer_event_provider_get
 
 
 class GeoId(NamedTuple):
@@ -24,17 +26,18 @@ class GeoId(NamedTuple):
 
 
 class XyEdge:
-    def __init__(self, geo_idx: int, start: App.Vector, end: App.Vector, x: bool, y: bool, construct: bool):
+    def __init__(self, geo_idx: int, start: App.Vector, end: App.Vector, x: bool, y: bool, construct: bool, extern: bool):
         self.geo_idx = geo_idx
         self.start: App.Vector = start
         self.end: App.Vector = end
         self.has_x: bool = x
         self.has_y: bool = y
         self.construct: bool = construct
+        self.extern: bool = extern
 
     def __str__(self):
         return f"GeoIdx {self.geo_idx}, Start ({fmt_vec(self.start)} End ({fmt_vec(self.end)} x {self.has_x} " \
-               f"y {self.has_y}"
+               f"y {self.has_y} co {self.construct} ex {self.extern}"
 
     def __repr__(self):
         return self.__str__()
@@ -54,7 +57,10 @@ class XyEdges(QObject):
         super(XyEdges, self).__init__()
         self.__init = False
         self.base: co_impl.CoEd = base
+        self.sketch: Sketcher.SketchObject = self.base.sketch
         self.edges: List[XyEdge] = list()
+        self.evo = observer_event_provider_get()
+        self.evo.in_edit.connect(self.on_in_edit)
         self.__init = True
 
     @property
@@ -62,10 +68,8 @@ class XyEdges(QObject):
         if not self.__init:
             self.__init = True
             self.edges_create()
-
         if self.base.flags.has(Dirty.XY_EDGES):
             self.edges_create()
-
         return self._edges
 
     @edges.setter
@@ -73,23 +77,37 @@ class XyEdges(QObject):
         self._edges = value
 
     @flow
+    @Slot(object)
+    def on_in_edit(self, obj):
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
+            ed_info = App.Gui.ActiveDocument.InEditInfo
+            if (ed_info is not None) and (ed_info[0].TypeId == ObjType.SKETCH_OBJECT):
+                self.sketch = ed_info[0]
+
+    @flow
     def cons_get(self) -> (Set[Tuple[GeoId, GeoId]], Set[Tuple[GeoId, GeoId]]):
         co_list: List[co_cs.Constraint] = self.base.cs.constraints
         exist_x: Set[Tuple[GeoId, GeoId]] = {(GeoId(x.first, x.first_pos), GeoId(x.second, x.second_pos))
                                              for x in co_list
-                                             if (x.type_id == 'DistanceX') and (x.second_pos != 0)}
+                                             if (x.type_id == ConType.DISTANCEX.value) and (x.second_pos != 0)}
         exist_y: Set[Tuple[GeoId, GeoId]] = {(GeoId(x.first, x.first_pos), GeoId(x.second, x.second_pos))
                                              for x in co_list
-                                             if (x.type_id == 'DistanceY') and (x.second_pos != 0)}
+                                             if (x.type_id == ConType.DISTANCEY.value) and (x.second_pos != 0)}
         xp('exist xy cons GeoId: X', ' '.join(map(str, exist_x)), ' Y', ' '.join(map(str, exist_y)), **_xy)
         return exist_x, exist_y
 
     @flow
     def edges_create(self):
         self._edges.clear()
-        geo_lst = [(idx, geo) for idx, geo
-                   in enumerate(self.base.sketch.Geometry)
-                   if geo.TypeId == 'Part::GeomLineSegment']
+        geo_lst = [(idx, geo)
+                   for idx, geo
+                   in enumerate(self.sketch.Geometry)
+                   if geo.TypeId == GeoType.LINE_SEGMENT]
+        lo = Lookup(self.sketch)
+        geo_lst += [(id_.idx, geo)
+                    for id_, geo
+                    in lo.extern_points('E')
+                    if geo.TypeId == GeoType.LINE_SEGMENT]
         exist_x, exist_y = self.cons_get()
         exist_x: Set[Tuple[GeoId, GeoId]]
         exist_y: Set[Tuple[GeoId, GeoId]]
@@ -98,7 +116,7 @@ class XyEdges(QObject):
         for idx, line in geo_lst:
             line: Part.LineSegment
             ed: XyEdge = XyEdge(idx, App.Vector(line.StartPoint), App.Vector(line.EndPoint),
-                                ((idx, idx) in ex_x), ((idx, idx) in ex_y), self.base.sketch.getConstruction(idx))
+                                ((idx, idx) in ex_x), ((idx, idx) in ex_y), self.sketch.getConstruction(idx), idx <= -3)
             self._edges.append(ed)
         [xp(xy_edge, **_xy) for xy_edge in self._edges]
         self.base.flags.reset(Dirty.XY_EDGES)
@@ -113,23 +131,23 @@ class XyEdges(QObject):
             if (not edg.has_x) and x:
                 x1 = edg.start.x
                 x2 = edg.end.x
-                con_list.append(Sketcher.Constraint('DistanceX', idx, 1, idx, 2, (x2 - x1)))
+                con_list.append(Sketcher.Constraint(ConType.DISTANCEX.value, idx, 1, idx, 2, (x2 - x1)))
                 xp(f'DistanceX created, geo_start ({idx}.1) geo_end ({idx}.2), {(x2 - x1)}', **_xy)
                 xp('created.emit: DistanceX', idx, (x2 - x1), **_ev)
                 self.created.emit('DistanceX', idx, (x2 - x1))
             if (not edg.has_y) and y:
                 y1 = edg.start.y
                 y2 = edg.end.y
-                con_list.append(Sketcher.Constraint('DistanceY', idx, 1, idx, 2, (y2 - y1)))
+                con_list.append(Sketcher.Constraint(ConType.DISTANCEY.value, idx, 1, idx, 2, (y2 - y1)))
                 xp(f'DistanceY created, geo_start ({idx}.1) geo_end ({idx}.2), {(y2 - y1)}', **_xy)
                 xp('created.emit: DistanceY', idx, (y2 - y1), **_ev)
                 self.created.emit('DistanceY', idx, (y2 - y1))
         doc.openTransaction('coed: DistanceX/DistanceX constraint')
-        self.base.sketch.addConstraint(con_list)
+        self.sketch.addConstraint(con_list)
         doc.commitTransaction()
 
         if len(edg_list) > 0:
-            sk: Sketcher.SketchObject = self.base.sketch
+            sk: Sketcher.SketchObject = self.sketch
             sk.addProperty('App::PropertyString', 'coed')
             sk.coed = 'xy_recompute'
             doc.openTransaction('coed: obj recompute')

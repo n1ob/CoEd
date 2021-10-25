@@ -5,38 +5,44 @@ from typing import List, Set, Tuple, NamedTuple
 import FreeCAD as App
 import Part
 import Sketcher
-from PySide2.QtCore import Signal, QObject
+from PySide2.QtCore import Signal, QObject, Slot
 
 from . import co_cs
 from .. import co_impl
-from ..co_base.co_cmn import fmt_vec, ConType
+from ..co_base.co_cmn import fmt_vec, ConType, GeoType, ObjType
+from ..co_base.co_config import CfgTransient
 from ..co_base.co_flag import Dirty
 from ..co_base.co_logger import flow, xp, _pa, xps, _ev
+from ..co_base.co_lookup import Lookup
+from ..co_base.co_observer import observer_event_provider_get
 
 
 class GeoDiff(NamedTuple):
     geo_idx: int
     difference: float
+    construct: bool
+    extern: bool
 
     def __str__(self) -> str:
-        return f'({self.geo_idx}) {self.difference:.2f}'
+        return f'({self.geo_idx}) {self.difference:.2f} co {self.construct} ex {self.extern}'
 
     def __repr__(self) -> str:
         return self.__str__()
 
 
 class PaEdge:
-    def __init__(self, geo_idx: int, y_angel: float, start: App.Vector, end: App.Vector, construct: bool):
+    def __init__(self, geo_idx: int, y_angel: float, start: App.Vector, end: App.Vector, construct: bool, extern: bool):
         self.geo_idx = geo_idx
         self.pt_start: App.Vector = start
         self.pt_end: App.Vector = end
         self.y_angel: float = y_angel
-        self.construct: bool = construct
         self.edg_differences: List[GeoDiff] = list()
+        self.construct: bool = construct
+        self.extern: bool = extern
 
     def __str__(self):
         return f"GeoIdx {self.geo_idx}, Start ({fmt_vec(self.pt_start)} End ({fmt_vec(self.pt_end)} " \
-               f"ya {self.y_angel:.2f}, diff {self.edg_differences}"
+               f"ya {self.y_angel:.2f}, diff {self.edg_differences} c {self.construct} e {self.extern}"
 
     def __repr__(self):
         return self.__str__()
@@ -111,9 +117,13 @@ class PaEdges(QObject):
         super(PaEdges, self).__init__()
         self.__init = False
         self.base: co_impl.CoEd = base
-        self.tolerance: float = 1.0
+        self.sketch: Sketcher.SketchObject = self.base.sketch
+        self.cfg = CfgTransient()
+        self.tolerance: float = self.cfg.get(self.cfg.PA_TOLERANCE)
         self.differences: List[PaEdge] = list()
         self.tolerances: List[PaEdge] = list()
+        self.evo = observer_event_provider_get()
+        self.evo.in_edit.connect(self.on_in_edit)
         self.__init = True
 
     @property
@@ -123,6 +133,7 @@ class PaEdges(QObject):
     @tolerance.setter
     def tolerance(self, value):
         self._tolerance = value
+        self.cfg.set(self.cfg.PA_TOLERANCE, value)
         if self.__init:
             self.tolerances_create()
 
@@ -145,6 +156,14 @@ class PaEdges(QObject):
     @tolerances.setter
     def tolerances(self, value):
         self._tolerances = value
+
+    @flow
+    @Slot(object)
+    def on_in_edit(self, obj):
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
+            ed_info = App.Gui.ActiveDocument.InEditInfo
+            if (ed_info is not None) and (ed_info[0].TypeId == ObjType.SKETCH_OBJECT):
+                self.sketch = ed_info[0]
 
     @staticmethod
     def __ge(start: App.Vector, end: App.Vector) -> float:
@@ -172,11 +191,19 @@ class PaEdges(QObject):
 
     @flow
     def __angles_create(self) -> None:
-        geo_lst = [(idx, geo) for idx, geo
-                   in enumerate(self.base.sketch.Geometry)
-                   if geo.TypeId == 'Part::GeomLineSegment']
+        geo_lst = [(idx, geo, self.sketch.getConstruction(idx), idx <= -3)
+                   for idx, geo
+                   in enumerate(self.sketch.Geometry)
+                   if geo.TypeId == GeoType.LINE_SEGMENT]
+        xp(geo_lst)
+        lo = Lookup(self.sketch)
+        geo_lst += [(geo_id.idx, geo, True, True)
+                    for geo_id, geo
+                    in lo.extern_points('E')
+                    if geo.TypeId == GeoType.LINE_SEGMENT]
+        xp(lo.extern_points('E'))
         for geo in geo_lst:
-            idx, line = geo
+            idx, line, c, e = geo
             line: Part.LineSegment
             vs = App.Vector(line.StartPoint)
             ve = App.Vector(line.EndPoint)
@@ -188,7 +215,7 @@ class PaEdges(QObject):
             else:
                 a = angle
             # y_angle: float = self.__alpha(App.Vector(line.StartPoint), App.Vector(line.EndPoint))
-            edg = PaEdge(idx, a, App.Vector(line.StartPoint), App.Vector(line.EndPoint), self.base.sketch.getConstruction(idx))
+            edg = PaEdge(idx, a, App.Vector(line.StartPoint), App.Vector(line.EndPoint), c, e)
             self._differences.append(edg)
         self._differences.sort(key=attrgetter('y_angel'))
 
@@ -205,10 +232,10 @@ class PaEdges(QObject):
                 edg_x = self._differences[x]
                 if x < y:
                     diff = self._differences[x].edg_differences[y - 1].difference
-                    n = GeoDiff(edg_x.geo_idx, diff)
+                    n = GeoDiff(edg_x.geo_idx, diff, edg_x.construct, edg_x.extern)
                     edg_y.edg_differences.append(n)
                 else:
-                    edg_y.edg_differences.append(GeoDiff(edg_x.geo_idx, abs(edg_y.y_angel - edg_x.y_angel)))
+                    edg_y.edg_differences.append(GeoDiff(edg_x.geo_idx, abs(edg_y.y_angel - edg_x.y_angel), edg_x.construct, edg_x.extern))
         for edg in self._differences:
             edg.edg_differences.sort(key=attrgetter('difference'))
         self.base.flags.reset(Dirty.PA_EDGES)
@@ -218,7 +245,7 @@ class PaEdges(QObject):
     def tolerances_create(self) -> None:
         self._tolerances.clear()
         for item in self.differences:
-            a = PaEdge(item.geo_idx, item.y_angel, item.pt_start, item.pt_end, item.construct)
+            a = PaEdge(item.geo_idx, item.y_angel, item.pt_start, item.pt_end, item.construct, item.extern)
             a.edg_differences = item.edg_tolerances_get(self.tolerance)
             self._tolerances.append(a)
         self.log_tol()
@@ -240,10 +267,10 @@ class PaEdges(QObject):
                 xp('created.emit', **_ev)
                 self.created.emit(edge.geo_idx, diff.geo_idx)
         doc.openTransaction('coed: Parallel constraint')
-        self.base.sketch.addConstraint(con_list)
+        self.sketch.addConstraint(con_list)
         doc.commitTransaction()
 
-        sk: Sketcher.SketchObject = self.base.sketch
+        sk: Sketcher.SketchObject = self.sketch
         sk.addProperty('App::PropertyString', 'coed')
         sk.coed = 'eq_recompute'
         doc.openTransaction('coed: obj recompute')

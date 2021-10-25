@@ -3,16 +3,17 @@ from typing import List
 
 import FreeCAD as App
 import FreeCADGui as Gui
+import Sketcher
 from PySide2.QtCore import Slot, QItemSelectionModel, QModelIndex, Qt
-from PySide2.QtGui import QBrush
 from PySide2.QtWidgets import QWidget, QBoxLayout, QGroupBox, QTableWidget, QLabel, QDoubleSpinBox, QPushButton, \
     QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView
 
 from .co_hv import HvEdges, HvEdge
 from .. import co_impl, co_gui
-from ..co_base.co_cmn import wait_cursor, Controller, Worker
+from ..co_base.co_cmn import wait_cursor, ColorTableItem, ObjType
 from ..co_base.co_logger import flow, xp, _hv, _ev, xps
-from ..co_base.co_observer import observer_block
+from ..co_base.co_lookup import Lookup
+from ..co_base.co_observer import observer_block, observer_event_provider_get
 
 _QL = QBoxLayout
 
@@ -20,6 +21,7 @@ _QL = QBoxLayout
 class HvGui:
     def __init__(self, base):
         self.base: co_gui.CoEdGui = base
+        self.sketch: Sketcher.SketchObject = self.base.sketch
         self.impl: co_impl.CoEd = self.base.base
         self.hv: HvEdges = self.impl.hv_edges
         self.tab_hv = QWidget(None)
@@ -34,6 +36,8 @@ class HvGui:
         self.hv_btn_create.setDisabled(True)
         self.hv_tbl_wid: QTableWidget = QTableWidget()
         self.tab_hv.setLayout(self.lay_get())
+        self.evo = observer_event_provider_get()
+        self.evo.in_edit.connect(self.on_in_edit)
         self.ctrl_up = None
         self.ctrl_lock = Lock()
         self.update_table()
@@ -53,6 +57,14 @@ class HvGui:
                [QHBoxLayout(), self.hv_lbl, self.hv_dbl_sp_box, _QL.addStretch, self.hv_btn_create],
                self.hv_tbl_wid]]
         return self.base.lay_get(li)
+
+    @flow
+    @Slot(object)
+    def on_in_edit(self, obj):
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
+            ed_info = Gui.ActiveDocument.InEditInfo
+            if (ed_info is not None) and (ed_info[0].TypeId == ObjType.SKETCH_OBJECT):
+                self.sketch = ed_info[0]
 
     @flow
     @Slot()
@@ -97,7 +109,12 @@ class HvGui:
             create_list: List[HvEdge] = [x.data() for x in rows]
             for idx in rows:
                 xp('row', idx.row(), ':', idx.data(), **_hv)
-            self.hv.create(create_list)
+            res = list()
+            # filter extern
+            for x in create_list:
+                if not x.extern:
+                    res.append(x)
+            self.hv.create(res)
         self.update_table()
 
     @flow
@@ -108,50 +125,57 @@ class HvGui:
 
     @flow(short=True)
     def on_result_up(self, result):
-        with self.ctrl_lock:
-            self.hv_tbl_wid.setUpdatesEnabled(False)
-            self.hv_tbl_wid.setRowCount(0)
-            __sorting_enabled = self.hv_tbl_wid.isSortingEnabled()
-            self.hv_tbl_wid.setSortingEnabled(False)
-            edge_list, cs_v, cs_h = result
-            res_lst: List[HvEdge] = list()
-            for edge in edge_list:
-                if edge.cons_filter(cs_v.union(cs_h)):
-                    res_lst.append(edge)
-            for idx, item in enumerate(res_lst):
-                self.hv_tbl_wid.insertRow(0)
-                w_item2 = QTableWidgetItem()
-                w_item2.setData(Qt.DisplayRole, item)
-                xp('col 3', idx, **_hv)
-                self.hv_tbl_wid.setItem(0, 0, w_item2)
-                w_item = QTableWidgetItem(f'Edge{item.geo_idx + 1}')
-                if item.construct:
-                    w_item.setForeground(QBrush(self.base.construct_color))
-                self.hv_tbl_wid.setItem(0, 1, w_item)
-                fmt = "xa {:.1f} ya {:.1f}".format(item.x_angel, item.y_angel)
-                w_item = QTableWidgetItem(fmt)
-                if self.impl.sketch.getConstruction(item.geo_idx):
-                    w_item.setForeground(QBrush(self.base.construct_color))
-                w_item.setTextAlignment(Qt.AlignCenter)
-                self.hv_tbl_wid.setItem(0, 2, w_item)
-            self.hv_tbl_wid.setSortingEnabled(__sorting_enabled)
-            hh: QHeaderView = self.hv_tbl_wid.horizontalHeader()
-            hh.resizeSections(QHeaderView.ResizeToContents)
-            self.hv_tbl_wid.setUpdatesEnabled(True)
+        self.hv_tbl_wid.setUpdatesEnabled(False)
+        self.hv_tbl_wid.setRowCount(0)
+        __sorting_enabled = self.hv_tbl_wid.isSortingEnabled()
+        self.hv_tbl_wid.setSortingEnabled(False)
+        edge_list, cs_v, cs_h = result
+        res_lst: List[HvEdge] = list()
+        for edge in edge_list:
+            if edge.cons_filter(cs_v.union(cs_h)):
+                res_lst.append(edge)
+        for idx, item in enumerate(res_lst):
+            self.hv_tbl_wid.insertRow(0)
+            w_item2 = QTableWidgetItem()
+            w_item2.setData(Qt.DisplayRole, item)
+            self.hv_tbl_wid.setItem(0, 0, w_item2)
+
+            t = Lookup.translate_ui_name(item.geo_idx)
+            fmt = f"{t}"
+            w_item = ColorTableItem(item.construct, item.extern, fmt)
+            self.hv_tbl_wid.setItem(0, 1, w_item)
+
+            fmt = "xa {:.1f} ya {:.1f}".format(item.x_angel, item.y_angel)
+            w_item = ColorTableItem(item.construct, item.extern, fmt)
+            w_item.setTextAlignment(Qt.AlignCenter)
+            self.hv_tbl_wid.setItem(0, 2, w_item)
+
+        self.hv_tbl_wid.setSortingEnabled(__sorting_enabled)
+        hh: QHeaderView = self.hv_tbl_wid.horizontalHeader()
+        hh.resizeSections(QHeaderView.ResizeToContents)
+        self.hv_tbl_wid.setUpdatesEnabled(True)
 
     @flow
     def update_table(self):
-        self.ctrl_up = Controller(Worker(self.task_up, self.hv), self.on_result_up, name='HorizontalVertical')
+        # self.ctrl_up = Controller(Worker(self.task_up, self.hv), self.on_result_up, name='HorizontalVertical')
+        res = self.task_up(self.hv)
+        self.on_result_up(res)
 
     @flow
     def selected(self):
         indexes: List[QModelIndex] = self.hv_tbl_wid.selectionModel().selectedRows(0)
         rows: List = [x.row() for x in sorted(indexes)]
         xp(f'selected: {rows}', **_hv)
-        if len(rows) == 0:
-            self.hv_btn_create.setDisabled(True)
-        else:
+        # not on extern
+        show: bool = False
+        for item in indexes:
+            hv: HvEdge = item.data()
+            if not hv.extern:
+                show = True
+        if show:
             self.hv_btn_create.setDisabled(False)
+        else:
+            self.hv_btn_create.setDisabled(True)
         doc_name = App.activeDocument().Name
         with observer_block():
             Gui.Selection.clearSelection(doc_name, True)
@@ -160,7 +184,8 @@ class HvGui:
         for item in indexes:
             hv: HvEdge = item.data()
             xp(f'row: {str(item.row())} idx: {hv.geo_idx} cons: {hv}', **_hv)
-            Gui.Selection.addSelection(doc_name, sk_name, f'Edge{hv.geo_idx + 1}')
+            t = Lookup.translate_ui_name(hv.geo_idx, False)
+            Gui.Selection.addSelection(doc_name, sk_name, f'{t}')
 
 
 xps(__name__)

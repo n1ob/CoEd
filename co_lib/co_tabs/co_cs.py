@@ -2,13 +2,13 @@ from typing import List, Dict
 
 import FreeCAD as App
 import Sketcher
-from PySide2.QtCore import Signal, QObject
+from PySide2.QtCore import Signal, QObject, Slot
 
 from .. import co_impl
-from ..co_base.co_cmn import pt_typ_str, ConType
+from ..co_base.co_cmn import pt_typ_str, ConType, ObjType
 from ..co_base.co_flag import Cs, Dirty
 from ..co_base.co_logger import xp, _cs, flow, _ev, xps
-from ..co_base.co_observer import observer_block
+from ..co_base.co_observer import observer_block, observer_event_provider_get
 
 
 class Constraint:
@@ -18,16 +18,20 @@ class Constraint:
         self.type_id: str = type_id
         self.sub_type: Cs = Cs(0)
         self.first: int = kwargs.get('FIRST', -2000)
+        tmp = self.first < 0
         self.first_pos: int = kwargs.get('FIRST_POS', 0)
         self.second: int = kwargs.get('SECOND', -2000)
+        tmp = tmp if self.second == -2000 else tmp and self.second < 0
         self.second_pos: int = kwargs.get('SECOND_POS', 0)
         self.third: int = kwargs.get('THIRD', -2000)
+        tmp = tmp if self.third == -2000 else tmp and self.third < 0
         self.third_pos: int = kwargs.get('THIRD_POS', 0)
         self.value: float = kwargs.get('VALUE', -0)
         self.fmt = kwargs.get('FMT', "{0} : {1} : {2} : {3} : {4} : {5} : {6} : {7}")
         self.driving: bool = True
         self.active: bool = True
         self.virtual: bool = False
+        self.pure_extern = tmp
 
     def __str__(self):
         return self.fmt.format(self.first, pt_typ_str[self.first_pos],  # (0),(1)
@@ -50,6 +54,9 @@ class Constraints(QObject):
     def __init__(self, base):
         super(Constraints, self).__init__()
         self.base: co_impl.CoEd = base
+        self.sketch: Sketcher.SketchObject = self.base.sketch
+        self.evo = observer_event_provider_get()
+        self.evo.in_edit.connect(self.on_in_edit)
         self.__constraints: List[Constraint] = list()
 
     @property
@@ -59,10 +66,20 @@ class Constraints(QObject):
         return self.__constraints
 
     @flow
+    @Slot(object)
+    def on_in_edit(self, obj):
+        if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
+            ed_info = App.Gui.ActiveDocument.InEditInfo
+            if (ed_info is not None) and (ed_info[0].TypeId == ObjType.SKETCH_OBJECT):
+                self.sketch = ed_info[0]
+
+    @flow
     def constraints_update(self):
         self.__constraints.clear()
         # noinspection PyUnresolvedReferences
-        co_list: List[Sketcher.Constraint] = self.base.sketch.Constraints
+        co_list: List[Sketcher.Constraint] = self.sketch.Constraints
+        xp('App.ActiveDocument.ActiveObject', id(App.ActiveDocument.ActiveObject), 'self.sketch',  id(self.sketch))
+
         xp('co_lst', co_list, **_cs)
         for idx, item in enumerate(co_list):
             ct: ConType = ConType(item.Type)
@@ -346,14 +363,14 @@ class Constraints(QObject):
             with observer_block():
                 for i in del_list:
                     xp('del: ' + str(i), **_cs)
-                    self.base.sketch.delConstraint(i)
-                    self.base.sketch.solve()
+                    self.sketch.delConstraint(i)
+                    self.sketch.solve()
                     xp('deleted.emit', i, **_ev)
                     self.deleted.emit(i)
             doc.commitTransaction()
             self.base.flags.set(Dirty.CONSTRAINTS)
             doc.openTransaction('coed: obj recompute')
-            sk: Sketcher.SketchObject = self.base.sketch
+            sk: Sketcher.SketchObject = self.sketch
             sk.addProperty('App::PropertyString', 'coed')
             sk.coed = 'cons_recompute'
             sk.recompute()
