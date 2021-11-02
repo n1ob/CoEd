@@ -200,8 +200,16 @@ class CoPoints(QObject):
                    for idx, line in geo_lst]
         xp(pt_lst, **_co)
         lo = Lookup(self.sketch)
-        pt_lst += [CoPoint(geo_id, geo.StartPoint, True, True) for geo_id, geo in lo.extern_points('V') if geo_id.typ == 1]
-        pt_lst += [CoPoint(geo_id, geo.EndPoint, True, True) for geo_id, geo in lo.extern_points('V') if geo_id.typ == 2]
+        try:
+            pt_lst += [CoPoint(geo_id, geo.StartPoint, True, True)
+                       for geo_id, geo in lo.extern_points('V')
+                       if geo_id.typ == 1 and geo.TypeId != GeoType.CIRCLE]
+            pt_lst += [CoPoint(geo_id, geo.EndPoint, True, True)
+                       for geo_id, geo in lo.extern_points('V')
+                       if geo_id.typ == 2 and geo.TypeId != GeoType.CIRCLE]
+        except AttributeError as err:
+            # circles don't have a StartPoint
+            xp(err)
         # pt_lst += [CoPoint(geo_id, pt, True, True) for geo_id, pt in lo.extern_points()]
         xp(pt_lst, **_co)
 
