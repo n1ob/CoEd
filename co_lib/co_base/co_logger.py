@@ -343,8 +343,8 @@ GLB_HEADER: bool = True
 
 # '': use without kwargs
 # _xp_topic('', 'obs_sel')
-# _xp_topic('')
-_xp_topic('', 'all')
+# _xp_topic('', 'flow', 'constraint')
+_xp_topic('')
 
 
 topics = {

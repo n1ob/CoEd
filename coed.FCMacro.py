@@ -22,10 +22,9 @@ import FreeCADGui as Gui
 from PySide2 import QtCore
 from PySide2.QtWidgets import QMessageBox, QWidget, QApplication
 
-from co_lib.co_base.co_cmn import wait_cursor
-from co_lib.co_base.co_config import Cfg
+from co_lib.co_base.co_cmn import wait_cursor, ObjType
 from co_lib.co_base.co_logger import xp, stack_tracer
-from co_lib.co_base.co_observer import register, unregister
+from co_lib.co_base.co_observer import register
 from co_lib.co_gui import CoEdGui
 from co_lib.co_impl import CoEd
 
@@ -38,7 +37,6 @@ def show_hint():
 
 
 if App.activeDocument():
-
     xp('getcwd:      ', os.getcwd())
     xp('__file__:    ', __file__)
     xp('basename:    ', os.path.basename(__file__))
@@ -51,7 +49,7 @@ if App.activeDocument():
         app: QApplication = QApplication.instance()
         ad: App.Document = App.activeDocument()
         xp('activeWorkbench.name', Gui.activeWorkbench().name())
-        xp('findObjects', ad.findObjects('Sketcher::SketchObject'))
+        xp('findObjects', ad.findObjects(ObjType.SKETCH_OBJECT))
         with wait_cursor():
             register()
             dir_ = os.path.dirname(os.path.abspath(__file__))
@@ -61,16 +59,14 @@ if App.activeDocument():
             # set_style(app)
             # set_palette(app)
             c = CoEd(ActiveSketch, dir_)
-            ex: QWidget = CoEdGui(c)
+            ex: QWidget = CoEdGui(c, False)
             ed_info = Gui.ActiveDocument.InEditInfo
             xp('ed_info', ed_info)
-            if ed_info and ed_info[0].TypeId == 'Sketcher::SketchObject':
+            if ed_info and ed_info[0].TypeId == ObjType.SKETCH_OBJECT:
                 xp('lets show it')
                 ex.show()
             else:
                 show_hint()
-            Cfg().save()
-            unregister()  # Uninstall the resident function
 
     except Exception:
         stack_tracer()

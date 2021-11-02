@@ -132,9 +132,9 @@ class RdGui:
                 rad = self.rd.radius
             mod: QItemSelectionModel = self.rad_tbl_wid.selectionModel()
             rows: List[QModelIndex] = mod.selectedRows(0)
-            create_list: List[RdCircle] = [x.data() for x in rows]
+            create_list: List[RdCircle] = [x.data(Qt.UserRole) for x in rows]
             for idx in rows:
-                xp(idx.row(), ':', idx.data(), **_rd)
+                xp(idx.row(), ':', idx.data(Qt.UserRole), **_rd)
             self.rd.dia_create(create_list, rad)
         self.update_table()
 
@@ -167,7 +167,7 @@ class RdGui:
                 cs = f'dia'
             self.rad_tbl_wid.insertRow(0)
             w_item = QTableWidgetItem()
-            w_item.setData(Qt.DisplayRole, item)
+            w_item.setData(Qt.UserRole, item)
             xp('col 3', item.geo_idx, **_rd)
             self.rad_tbl_wid.setItem(0, 0, w_item)
 
@@ -207,7 +207,7 @@ class RdGui:
         ed_info = Gui.ActiveDocument.InEditInfo
         sk_name = ed_info[0].Name
         for item in indexes:
-            rad: RdCircle = item.data()
+            rad: RdCircle = item.data(Qt.UserRole)
             xp(f'row: {str(item.row())} idx: {rad.geo_idx} cons: {rad}', **_rd)
             t = Lookup.translate_ui_name(rad.geo_idx, False)
             Gui.Selection.addSelection(doc_name, sk_name, f'{t}')

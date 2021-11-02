@@ -17,7 +17,7 @@ import json
 import os
 import threading
 from pathlib import Path
-from typing import NamedTuple, Dict, Set
+from typing import NamedTuple, Dict, Set, Any
 
 from PySide2.QtCore import QByteArray, QDataStream, QIODevice, QObject, Signal
 from PySide2.QtGui import QFont, QColor
@@ -203,7 +203,8 @@ class CfgTransient(CfgBase):
     def get(self, key):
         if key in CfgTransient.__NAMES:
             if key in self.data.keys():
-                return self.data[key]
+                val = self.convert_out(key, self.data[key])
+                return val
             else:
                 return self.default(key)
             # return None
@@ -212,6 +213,7 @@ class CfgTransient(CfgBase):
     @flow
     def set(self, key, val):
         if key in CfgTransient.__NAMES:
+            val = self.convert_in(val)
             self.data = {**self.data, **{key: val}}
             self.save()
             # self.data[key] = val
@@ -231,6 +233,20 @@ class CfgTransient(CfgBase):
         self.save_delegate(self.data)
 
     @flow
+    def convert_in(self, val: Any) -> Any:
+        if isinstance(val, QByteArray):
+            qb64 = val.toBase64()
+            return bytes(qb64).decode('UTF-8')
+        return val
+
+    @flow
+    def convert_out(self, key, val):
+        if key == CfgTransient.GEOMETRY:
+            enc = val.encode('UTF-8')
+            return QByteArray.fromBase64(enc)
+        return val
+
+    @flow
     def default(self, val):
         if val == CfgTransient.CO_TOLERANCE:
             return 0.1
@@ -242,15 +258,18 @@ class CfgTransient(CfgBase):
             return 0.1
         elif val == CfgTransient.SHOW_ONLY_VALID:
             return True
+        elif val == CfgTransient.GEOMETRY:
+            return None
         else:
             return None
 
+    GEOMETRY: str = 'geometry'
     CO_TOLERANCE: str = 'co_tolerance'
     EQ_TOLERANCE: str = 'eq_tolerance'
     HV_TOLERANCE: str = 'hv_tolerance'
     PA_TOLERANCE: str = 'pa_tolerance'
     SHOW_ONLY_VALID: str = 'only_valid'
-    __NAMES: Set[str] = {CO_TOLERANCE, EQ_TOLERANCE, HV_TOLERANCE, PA_TOLERANCE, SHOW_ONLY_VALID}
+    __NAMES: Set[str] = {CO_TOLERANCE, EQ_TOLERANCE, HV_TOLERANCE, PA_TOLERANCE, SHOW_ONLY_VALID, GEOMETRY}
 
 
 @cfg_decorator

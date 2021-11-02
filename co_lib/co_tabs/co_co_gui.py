@@ -149,7 +149,7 @@ class CoGui:
                 continue
             self.co_tbl_wid.insertRow(0)
             w_item = QTableWidgetItem()
-            w_item.setData(Qt.DisplayRole, pt)
+            w_item.setData(Qt.UserRole, pt)
             self.co_tbl_wid.setItem(0, 0, w_item)
             # w_item = QTableWidgetItem()
             # if pt.extern:
@@ -201,9 +201,9 @@ class CoGui:
         with wait_cursor():
             mod: QItemSelectionModel = self.co_tbl_wid.selectionModel()
             rows: List[QModelIndex] = mod.selectedRows(0)
-            create_list: List[CoPoint] = [x.data() for x in rows]
+            create_list: List[CoPoint] = [x.data(Qt.UserRole) for x in rows]
             for idx in rows:
-                xp(idx.row(), ':', idx.data(), **_co)
+                xp(idx.row(), ':', idx.data(Qt.UserRole), **_co)
             self.co.create(create_list)
         self.update_table()
 
@@ -224,7 +224,7 @@ class CoGui:
         chk = self.geo_vert_idx()
         res: List[str] = list()
         for item in indexes:
-            co: CoPoint = item.data()
+            co: CoPoint = item.data(Qt.UserRole)
             xp(f'row: {str(item.row())} id: {co.geo_id} pt: {fmt_vec(co.point)} {co.pt_distance_lst}', **_co)
             idx, typ = co.geo_id
             if (idx, typ) in chk:

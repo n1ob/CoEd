@@ -50,27 +50,41 @@ def fmt_vec(vec: App.Vector) -> str:
 
 # noinspection SpellCheckingInspection,PyPep8
 class ConType(Enum):
-    NONE: str              = "None"
-    COINCIDENT: str        = "Coincident"
-    HORIZONTAL: str        = "Horizontal"
-    VERTICAL: str          = "Vertical"
-    PARALLEL: str          = "Parallel"
-    TANGENT: str           = "Tangent"
-    DISTANCE: str          = "Distance"
-    DISTANCEX: str         = "DistanceX"
-    DISTANCEY: str         = "DistanceY"
-    ANGLE: str             = "Angle"
-    PERPENDICULAR: str     = "Perpendicular"
-    RADIUS: str            = "Radius"
-    EQUAL: str             = "Equal"
-    POINTONOBJECT: str     = "PointOnObject"
-    SYMMETRIC: str         = "Symmetric"
-    INTERNALALIGNMENT: str = "InternalAlignment"
-    SNELLSLAW: str         = "SnellsLaw"
-    BLOCK: str             = "Block"
-    DIAMETER: str          = "Diameter"
-    WEIGHT: str            = "Weight"
-    ALL: str               = "All"
+    NONE              = "None"
+    COINCIDENT        = "Coincident"
+    HORIZONTAL        = "Horizontal"
+    VERTICAL          = "Vertical"
+    PARALLEL          = "Parallel"
+    TANGENT           = "Tangent"
+    DISTANCE          = "Distance"
+    DISTANCEX         = "DistanceX"
+    DISTANCEY         = "DistanceY"
+    ANGLE             = "Angle"
+    PERPENDICULAR     = "Perpendicular"
+    RADIUS            = "Radius"
+    EQUAL             = "Equal"
+    POINTONOBJECT     = "PointOnObject"
+    SYMMETRIC         = "Symmetric"
+    INTERNALALIGNMENT = "InternalAlignment"
+    SNELLSLAW         = "SnellsLaw"
+    BLOCK             = "Block"
+    DIAMETER          = "Diameter"
+    WEIGHT            = "Weight"
+    ALL               = "All"
+
+
+# NO_DIM_CS = ['Block', 'Coincident', 'Equal', 'Horizontal', 'Parallel', 'Perpendicular', 'PointOnObject',
+#              'Symmetric', 'Tangent', 'Vertical']
+# DIM_CS = ['Angle', 'Diameter', 'Distance', 'DistanceX', 'DistanceY', 'InternalAlignment', 'Radius',
+#           'SnellsLaw', 'Weight']
+
+NO_DIM_CS = [ConType.BLOCK.value, ConType.COINCIDENT.value, ConType.EQUAL.value, ConType.HORIZONTAL.value, 
+             ConType.PARALLEL.value, ConType.PERPENDICULAR.value, ConType.POINTONOBJECT, 
+             ConType.SYMMETRIC.value, ConType.TANGENT.value, ConType.VERTICAL.value]
+DIM_CS = [ConType.ANGLE.value, ConType.DIAMETER.value, ConType.DISTANCE.value, ConType.DISTANCEX.value, 
+          ConType.DISTANCEY.value, ConType.INTERNALALIGNMENT.value, ConType.RADIUS, 
+          ConType.SNELLSLAW.value, ConType.WEIGHT.value]
+
 
 
 class GeoType:
@@ -164,6 +178,15 @@ def wait_cursor():
         yield
     finally:
         QApplication.restoreOverrideCursor()
+
+
+@contextmanager
+def block_signals(obj: QObject):
+    obj.blockSignals(True)
+    try:
+        yield
+    finally:
+        obj.blockSignals(False)
 
 
 def complement_color(rgb: str) -> str:

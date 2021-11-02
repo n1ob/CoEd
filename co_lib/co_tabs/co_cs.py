@@ -13,7 +13,8 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-from typing import List, Dict
+import pathlib
+from typing import List, Dict, Union
 
 import FreeCAD as App
 import Sketcher
@@ -21,6 +22,7 @@ from PySide2.QtCore import Signal, QObject, Slot
 
 from .. import co_impl
 from ..co_base.co_cmn import pt_typ_str, ConType, ObjType
+from ..co_base.co_config import CfgBase
 from ..co_base.co_flag import Cs, Dirty
 from ..co_base.co_logger import xp, _cs, flow, _ev, xps
 from ..co_base.co_observer import observer_block, observer_event_provider_get
@@ -28,8 +30,8 @@ from ..co_base.co_observer import observer_block, observer_event_provider_get
 
 class Constraint:
 
-    def __init__(self, co_idx: int, type_id: str, **kwargs):
-        self.co_idx: int = co_idx
+    def __init__(self, cs_idx: int, type_id: str, **kwargs):
+        self.cs_idx: int = cs_idx
         self.type_id: str = type_id
         self.sub_type: Cs = Cs(0)
         self.first: int = kwargs.get('FIRST', -2000)
@@ -47,18 +49,22 @@ class Constraint:
         self.active: bool = True
         self.virtual: bool = False
         self.pure_extern = tmp
+        self.ico_no = ''
+        self.ico_alt_no = ''
+        self.name = ''
+        self.exp = ''
 
     def __str__(self):
         return self.fmt.format(self.first, pt_typ_str[self.first_pos],  # (0),(1)
                                self.second, pt_typ_str[self.second_pos],  # (2),(3)
                                self.third, pt_typ_str[self.third_pos],  # (4),(5)
-                               self.value, self.co_idx)  # (6),(7)
+                               self.value, self.cs_idx)  # (6),(7)
 
     def __repr__(self):
         return self.fmt.format(self.first, self.first_pos,  # (0),(1)
                                self.second, self.second_pos,  # (2),(3)
                                self.third, self.third_pos,  # (4),(5)
-                               self.value, self.co_idx)  # (6),(7)
+                               self.value, self.cs_idx)  # (6),(7)
 
 
 class Constraints(QObject):
@@ -88,13 +94,82 @@ class Constraints(QObject):
             if (ed_info is not None) and (ed_info[0].TypeId == ObjType.SKETCH_OBJECT):
                 self.sketch = ed_info[0]
 
+    ico = {
+        'Block': 'co_lib/Icon/Constraint_Block.svg',
+        'Icon2': 'co_lib/Icon/Constraint_Concentric.svg',
+        'Diameter': 'co_lib/Icon/Constraint_Diameter.svg',
+        'Diameter_Driven': 'co_lib/Icon/Constraint_Diameter_Driven.svg',
+        'Icon5': 'co_lib/Icon/Constraint_Ellipse_Axis_Angle.svg',
+        'Icon6': 'co_lib/Icon/Constraint_Ellipse_Major_Radius.svg',
+        'Icon7': 'co_lib/Icon/Constraint_Ellipse_Minor_Radius.svg',
+        'Icon8': 'co_lib/Icon/Constraint_Ellipse_Radii.svg',
+        'EqualLength': 'co_lib/Icon/Constraint_EqualLength.svg',
+        'Icon10': 'co_lib/Icon/Constraint_ExternalAngle.svg',
+        'Horizontal': 'co_lib/Icon/Constraint_Horizontal.svg',
+        'HorizontalDistance': 'co_lib/Icon/Constraint_HorizontalDistance.svg',
+        'HorizontalDistance_Driven': 'co_lib/Icon/Constraint_HorizontalDistance_Driven.svg',
+        'InternalAlignment': 'co_lib/Icon/Constraint_InternalAlignment.svg',
+        'Icon15': 'co_lib/Icon/Constraint_InternalAlignment_Ellipse_Focus1.svg',
+        'Icon16': 'co_lib/Icon/Constraint_InternalAlignment_Ellipse_Focus2.svg',
+        'Icon17': 'co_lib/Icon/Constraint_InternalAlignment_Ellipse_MajorAxis.svg',
+        'Icon18': 'co_lib/Icon/Constraint_InternalAlignment_Ellipse_MinorAxis.svg',
+        'InternalAngle': 'co_lib/Icon/Constraint_InternalAngle.svg',
+        'InternalAngle_Driven': 'co_lib/Icon/Constraint_InternalAngle_Driven.svg',
+        'Length': 'co_lib/Icon/Constraint_Length.svg',
+        'Length_Driven': 'co_lib/Icon/Constraint_Length_Driven.svg',
+        'Icon23': 'co_lib/Icon/Constraint_Lock.svg',
+        'Icon24': 'co_lib/Icon/Constraint_Lock_Driven.svg',
+        'Parallel': 'co_lib/Icon/Constraint_Parallel.svg',
+        'Perpendicular': 'co_lib/Icon/Constraint_Perpendicular.svg',
+        'Icon27': 'co_lib/Icon/Constraint_PointOnEnd.svg',
+        'Icon28': 'co_lib/Icon/Constraint_PointOnMidPoint.svg',
+        'PointOnObject': 'co_lib/Icon/Constraint_PointOnObject.svg',
+        'PointOnPoint': 'co_lib/Icon/Constraint_PointOnPoint.svg',
+        'Icon31': 'co_lib/Icon/Constraint_PointOnStart.svg',
+        'Icon32': 'co_lib/Icon/Constraint_PointToObject.svg',
+        'Icon33': 'co_lib/Icon/Constraint_Radiam.svg',
+        'Icon34': 'co_lib/Icon/Constraint_Radiam_Driven.svg',
+        'Radius': 'co_lib/Icon/Constraint_Radius.svg',
+        'Radius_Driven': 'co_lib/Icon/Constraint_Radius_Driven.svg',
+        'SnellsLaw': 'co_lib/Icon/Constraint_SnellsLaw.svg',
+        'SnellsLaw_Driven': 'co_lib/Icon/Constraint_SnellsLaw_Driven.svg',
+        'Symmetric': 'co_lib/Icon/Constraint_Symmetric.svg',
+        'Tangent': 'co_lib/Icon/Constraint_Tangent.svg',
+        'Icon41': 'co_lib/Icon/Constraint_TangentToEnd.svg',
+        'Icon42': 'co_lib/Icon/Constraint_TangentToStart.svg',
+        'Vertical': 'co_lib/Icon/Constraint_Vertical.svg',
+        'VerticalDistance': 'co_lib/Icon/Constraint_VerticalDistance.svg',
+        'VerticalDistance_Driven': 'co_lib/Icon/Constraint_VerticalDistance_Driven.svg',
+        'Icon46': 'co_lib/Icon/Sketcher_Crosshair.svg',
+        'Icon47': 'co_lib/Icon/Sketcher_ToggleActiveConstraint.svg',
+        'Icon48': 'co_lib/Icon/Sketcher_ToggleConstraint.svg',
+        'Icon49': 'co_lib/Icon/Sketcher_Toggle_Constraint_Driven.svg',
+        'Icon50': 'co_lib/Icon/Sketcher_Toggle_Constraint_Driving.svg',
+    }
+
     @flow
     def constraints_update(self):
         self.__constraints.clear()
         # noinspection PyUnresolvedReferences
         co_list: List[Sketcher.Constraint] = self.sketch.Constraints
-        xp('App.ActiveDocument.ActiveObject', id(App.ActiveDocument.ActiveObject), 'self.sketch',  id(self.sketch))
+        # [('Constraints[6]', '2 * 4'), ('.Constraints.test', '2 * 4.5')]
+        # >> > txt = "h3110 23 cat 444.4 rabbit 11 2 dog"
+        # >> > [int(s) for s in txt.split() if s.isdigit()]
+        # [23, 11, 2]
+        exp_list = self.sketch.ExpressionEngine
+        d_exp: Dict[Union[str, int], str] = dict()
+        for idx_, exp in exp_list:
+            idx: str
+            exp: str
+            if idx_.startswith('Constraints['):
+                i = int(''.join(filter(str.isdigit, idx_)))
+                d_exp[i] = exp
+            else:
+                i = idx_.rfind('.')
+                s = idx_[i + 1:]
+                d_exp[s] = exp
 
+        xp('App.ActiveDocument.ActiveObject', id(App.ActiveDocument.ActiveObject), 'self.sketch',  id(self.sketch), **_cs)
         xp('co_lst', co_list, **_cs)
         for idx, item in enumerate(co_list):
             ct: ConType = ConType(item.Type)
@@ -110,10 +185,7 @@ class Constraints(QObject):
 
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['PointOnPoint']))
 
             elif ct == ConType.HORIZONTAL or ct == ConType.VERTICAL:
                 # ConstraintType, GeoIndex
@@ -130,10 +202,8 @@ class Constraints(QObject):
 
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                no = 'Vertical' if ct == ConType.VERTICAL else 'Horizontal'
+                con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico[no]))
 
             elif ct == ConType.PARALLEL or ct == ConType.EQUAL:
                 # ConstraintType, GeoIndex1, GeoIndex2
@@ -146,10 +216,8 @@ class Constraints(QObject):
 
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                no = 'Parallel' if ct == ConType.PARALLEL else 'EqualLength'
+                con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico[no]))
 
             elif ct == ConType.TANGENT or ct == ConType.PERPENDICULAR:
                 # ConstraintType, GeoIndex1, GeoIndex2
@@ -170,10 +238,8 @@ class Constraints(QObject):
 
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                no = 'Tangent' if ct == ConType.TANGENT else 'Perpendicular'
+                con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico[no]))
 
             elif ct == ConType.DISTANCE:
                 # ConstraintType, GeoIndex, Value
@@ -194,10 +260,8 @@ class Constraints(QObject):
 
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['Length']))
+                con.ico_alt_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['Length_Driven']))
 
             elif ct == ConType.DISTANCEX or ct == ConType.DISTANCEY:
                 if item.FirstPos == 0:
@@ -215,10 +279,12 @@ class Constraints(QObject):
 
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                if ct == ConType.DISTANCEX:
+                    con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['HorizontalDistance']))
+                    con.ico_alt_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['HorizontalDistance_Driven']))
+                else:
+                    con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['VerticalDistance']))
+                    con.ico_alt_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['VerticalDistance_Driven']))
 
             elif ct == ConType.ANGLE:
                 # ConstraintType, GeoIndex, Value
@@ -239,10 +305,8 @@ class Constraints(QObject):
 
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['InternalAngle']))
+                con.ico_alt_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['InternalAngle_Driven']))
 
             elif ct == ConType.RADIUS or ct == ConType.DIAMETER or ct == ConType.WEIGHT:
                 # ConstraintType, GeoIndex, Value
@@ -255,10 +319,12 @@ class Constraints(QObject):
 
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                if ct == ConType.RADIUS or ct == ConType.WEIGHT:
+                    con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['Radius']))
+                    con.ico_alt_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['Radius_Driven']))
+                if ct == ConType.DIAMETER:
+                    con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['Diameter']))
+                    con.ico_alt_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['Diameter_Driven']))
 
             elif ct == ConType.POINTONOBJECT:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2
@@ -271,10 +337,7 @@ class Constraints(QObject):
 
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['PointOnObject']))
 
             elif ct == ConType.SYMMETRIC:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, GeoIndex3
@@ -287,10 +350,7 @@ class Constraints(QObject):
                     kwargs = self.__get_kwargs(cs, item, "{0}.{1} {2}.{3} {4}.{5}")
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['Symmetric']))
 
             elif ct == ConType.INTERNALALIGNMENT:
                 # ConstraintType, GeoIndex1, GeoIndex2
@@ -311,10 +371,7 @@ class Constraints(QObject):
 
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['InternalAlignment']))
 
             elif ct == ConType.SNELLSLAW:
                 # ConstraintType, GeoIndex1, PosIndex1, GeoIndex2, PosIndex2, GeoIndex3 ????
@@ -328,10 +385,8 @@ class Constraints(QObject):
 
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['SnellsLaw']))
+                con.ico_alt_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['SnellsLaw_Driven']))
 
             elif ct == ConType.BLOCK:
                 # ConstraintType, GeoIndex
@@ -339,10 +394,18 @@ class Constraints(QObject):
                 kwargs = self.__get_kwargs(cs, item, "{0}")
                 con = Constraint(idx, ct.value, **kwargs)
                 con.sub_type = cs
-                con.driving = item.Driving
-                con.active = item.IsActive
-                con.virtual = item.InVirtualSpace
-                self.__constraints.append(con)
+                con.ico_no = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['Block']))
+            else:
+                continue
+            con.driving = item.Driving
+            con.active = item.IsActive
+            con.virtual = item.InVirtualSpace
+            con.name = item.Name
+            lo: Union[str, int] = con.name if con.name else con.cs_idx
+            if lo in d_exp.keys():
+                con.exp = d_exp[lo]
+            self.__constraints.append(con)
+
         self.base.flags.reset(Dirty.CONSTRAINTS)
         xp('update_done.emit', **_ev)
         self.update_done.emit()

@@ -193,17 +193,17 @@ class CoPoints(QObject):
         geo_lst: List[Tuple[int, object]] = [(idx, geo) for idx, geo in enumerate(self.sketch.Geometry)
                                              if geo.TypeId == GeoType.LINE_SEGMENT or
                                              geo.TypeId == GeoType.ARC_OF_CIRCLE]
-        xp(geo_lst)
+        xp(geo_lst, **_co)
         pt_lst = [CoPoint(GeoId(idx, 1), App.Vector(line.StartPoint), self.sketch.getConstruction(idx), idx <= -3)
                   for idx, line in geo_lst]
         pt_lst += [CoPoint(GeoId(idx, 2), App.Vector(line.EndPoint), self.sketch.getConstruction(idx), idx <= -3)
                    for idx, line in geo_lst]
-        xp(pt_lst)
+        xp(pt_lst, **_co)
         lo = Lookup(self.sketch)
         pt_lst += [CoPoint(geo_id, geo.StartPoint, True, True) for geo_id, geo in lo.extern_points('V') if geo_id.typ == 1]
         pt_lst += [CoPoint(geo_id, geo.EndPoint, True, True) for geo_id, geo in lo.extern_points('V') if geo_id.typ == 2]
         # pt_lst += [CoPoint(geo_id, pt, True, True) for geo_id, pt in lo.extern_points()]
-        xp(pt_lst)
+        xp(pt_lst, **_co)
 
         pt_len = len(pt_lst)
         for y in range(pt_len):

@@ -210,13 +210,13 @@ class PaEdges(QObject):
                    for idx, geo
                    in enumerate(self.sketch.Geometry)
                    if geo.TypeId == GeoType.LINE_SEGMENT]
-        xp(geo_lst)
+        xp(geo_lst, **_pa)
         lo = Lookup(self.sketch)
         geo_lst += [(geo_id.idx, geo, True, True)
                     for geo_id, geo
                     in lo.extern_points('E')
                     if geo.TypeId == GeoType.LINE_SEGMENT]
-        xp(lo.extern_points('E'))
+        xp(lo.extern_points('E'), **_pa)
         for geo in geo_lst:
             idx, line, c, e = geo
             line: Part.LineSegment

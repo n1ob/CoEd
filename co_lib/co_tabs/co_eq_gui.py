@@ -129,7 +129,7 @@ class EqGui:
                 continue
             self.eq_tbl_wid.insertRow(0)
             w_item2 = QTableWidgetItem()
-            w_item2.setData(Qt.DisplayRole, item)
+            w_item2.setData(Qt.UserRole, item)
             self.eq_tbl_wid.setItem(0, 0, w_item2)
             t = Lookup.translate_ui_name(item.geo_idx)
             fmt = f"{t} {item.length:.1f}"
@@ -171,9 +171,9 @@ class EqGui:
         with wait_cursor():
             mod: QItemSelectionModel = self.eq_tbl_wid.selectionModel()
             rows: List[QModelIndex] = mod.selectedRows(0)
-            create_list: List[EqEdge] = [x.data() for x in rows]
+            create_list: List[EqEdge] = [x.data(Qt.UserRole) for x in rows]
             for idx in rows:
-                xp('row', idx.row(), ':', idx.data(), **_eq)
+                xp('row', idx.row(), ':', idx.data(Qt.UserRole), **_eq)
             self.eq.create(create_list)
         self.update_table()
 
@@ -192,7 +192,7 @@ class EqGui:
         ed_info = Gui.ActiveDocument.InEditInfo
         sk_name = ed_info[0].Name
         for item in indexes:
-            eq: EqEdge = item.data()
+            eq: EqEdge = item.data(Qt.UserRole)
             xp(f'row: {str(item.row())} idx: {eq.geo_idx} len: {eq.length:.2f} {eq.edg_differences}', **_eq)
             t = Lookup.translate_ui_name(eq.geo_idx, False)
             Gui.Selection.addSelection(doc_name, sk_name, f'{t}')

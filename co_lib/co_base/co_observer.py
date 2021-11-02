@@ -108,7 +108,7 @@ class AppDocumentObserver(object):
     def slotCommitTransaction(self, doc):
         xp(f'{next(AppDocumentObserver.seq):>3}', 'AppDocumentObserver slotCommitTransaction', doc, **_ob_a)
         name = AppDocumentObserver.__trans_name
-        xp('received name:', name)
+        xp('received name:', name, **_ob_a)
         if name.startswith('Create a new sketch'):
             xp('ignore Create a new sketch', **_ob_a)
             return

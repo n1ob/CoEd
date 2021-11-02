@@ -41,9 +41,6 @@ try:
 except ImportError:
     pass
 
-# todo renaming constraints
-#  set expression
-
 
 def main_g(sketch, app):
 
@@ -70,7 +67,7 @@ def main_g(sketch, app):
         # set_style(app)
         # set_palette(app)
         c = CoEd(sketch, dir_)
-        ex: QWidget = CoEdGui(c)
+        ex: QWidget = CoEdGui(c, True)
         ed_info = Gui.ActiveDocument.InEditInfo
         xp('ed_info', ed_info)
         if ed_info is not None:

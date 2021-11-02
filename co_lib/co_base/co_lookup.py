@@ -21,7 +21,7 @@ import Sketcher
 
 from .co_cmn import GeoPt, fmt_vec, ConType, GeoType, GeoTypeUi, GeoId
 from .co_flag import Cs, ConsTrans
-from .co_logger import flow, xps, xp
+from .co_logger import flow, xps, xp, _go
 
 
 class Lookup:
@@ -90,30 +90,30 @@ class Lookup:
 
     def decode_external(self):
         for idx, ex in enumerate(self.sketch.ExternalGeometry):
-            xp('idx:', idx, 'name:', ex[0].Name, 'ex_list:', list(ex[1]))
+            xp('idx:', idx, 'name:', ex[0].Name, 'ex_list:', list(ex[1]), **_go)
             sk: Sketcher.Sketch = ex[0]
             lo_idx = self.vert_geo_idx(sk)
             lst_ext_ui = list(ex[1])
             lst_decon_ui = [self.deconstruct_ui_name(x) for x in lst_ext_ui]
             for typ, no in lst_decon_ui:
-                xp('typ, no', typ, no)
+                xp('typ, no', typ, no, **_go)
                 if typ == GeoTypeUi.EDGE:
                     edg = sk.Geometry[no-1]
                     if edg.TypeId == GeoType.LINE_SEGMENT:
                         edg: Part.LineSegment
                         vec1: App.Vector = App.Vector(edg.StartPoint)
                         vec2: App.Vector = App.Vector(edg.EndPoint)
-                        xp(f'geo_idx: {no-1} start: {fmt_vec(vec1)} end: {fmt_vec(vec2)}')
+                        xp(f'geo_idx: {no-1} start: {fmt_vec(vec1)} end: {fmt_vec(vec2)}', **_go)
                     if edg.TypeId == GeoType.CIRCLE:
                         edg: Part.Circle
-                        xp(f'geo_idx: {no-1} TypeId: {edg.TypeId} Center: {fmt_vec(App.Vector(edg.Center))} Radius: {edg.Radius}')
+                        xp(f'geo_idx: {no-1} TypeId: {edg.TypeId} Center: {fmt_vec(App.Vector(edg.Center))} Radius: {edg.Radius}', **_go)
                     if edg.TypeId == GeoType.ARC_OF_CIRCLE:
                         edg: Part.ArcOfCircle
-                        xp(f'geo_idx: {no-1} TypeId: {edg.TypeId} Center: {fmt_vec(App.Vector(edg.Center))} Radius: {edg.Radius}')
+                        xp(f'geo_idx: {no-1} TypeId: {edg.TypeId} Center: {fmt_vec(App.Vector(edg.Center))} Radius: {edg.Radius}', **_go)
                 if typ == GeoTypeUi.VERTEX:
                     geo, typ = lo_idx[no-1]
                     edg = sk.Geometry[geo]
-                    xp('geo, typ, TypeId', geo, typ, edg.TypeId)
+                    xp('geo, typ, TypeId', geo, typ, edg.TypeId, **_go)
 
     @flow
     def vert_geo_idx(self, sketch) -> Dict[int, Tuple[int, int]]:

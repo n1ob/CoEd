@@ -2092,7 +2092,7 @@ QTableView > QWidget > QTextEdit,
 QTableView > QWidget > QTimeEdit,
 QTableView > QWidget > QDateEdit,
 QTableView > QWidget > QDateTimeEdit {
-    color: black;
+    color: white;
     background-color: transparent;
     border-color: transparent;
 }

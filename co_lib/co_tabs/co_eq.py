@@ -184,7 +184,7 @@ class EqEdges(QObject):
         lo = Lookup(self.base.sketch)
         geo_lst += [(geo_id.idx, geo.length(), True, True) for geo_id, geo in lo.extern_points('E')]
         # geo_lst += [(idx, len_, True, True) for idx, len_ in lo.extern_points(2)]
-        xp(geo_lst)
+        xp(geo_lst, **_eq)
         len_geo = len(geo_lst)
         for y in range(len_geo):
             id_y, le_y, c, e = geo_lst[y]

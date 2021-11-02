@@ -18,16 +18,16 @@ from typing import List, Dict, Tuple, Callable
 import FreeCAD as App
 import FreeCADGui as Gui
 import Sketcher
-from PySide2.QtCore import Qt, Slot, QTimer
+from PySide2.QtCore import Qt, Slot, QTimer, QSettings
 from PySide2.QtGui import QFont, QColor
 from PySide2.QtWidgets import QComboBox, QWidget, QVBoxLayout, QPlainTextEdit, QPushButton, \
     QTabWidget, QLabel, QTableWidget, QSpinBox, \
     QAbstractItemView, QHeaderView, QGroupBox, QDoubleSpinBox, QCheckBox, QBoxLayout, QLineEdit
 
 from co_lib.co_base.co_cmn import ObjType
-from co_lib.co_base.co_config import Cfg
+from co_lib.co_base.co_config import Cfg, CfgTransient
 from co_lib.co_base.co_lookup import Lookup
-from .co_base.co_logger import xp, flow, _ly, xps, _fl, _ob_s, _ob_a, stack_tracer, xp_worker
+from .co_base.co_logger import xp, flow, _ly, xps, _fl, _ob_s, _ob_a, stack_tracer, xp_worker, _ob_g
 from .co_base.co_observer import observer_event_provider_get, unregister
 from .co_impl import CoEd
 from .co_tabs.co_cfg_gui import CfgGui
@@ -63,9 +63,10 @@ class SkHint(QWidget):
 # noinspection PyArgumentList
 class CoEdGui(QWidget):
     @flow(short=True)
-    def __init__(self, base: CoEd, parent=None):
+    def __init__(self, base: CoEd, exit: bool, parent=None):
         super().__init__(parent)
         self.base: CoEd = base
+        self.exit = exit
         self.sketch: Sketcher.SketchObject = self.base.sketch
         self.evo = observer_event_provider_get()
         self.evo.add_selection.connect(self.on_add_selection)
@@ -125,13 +126,22 @@ class CoEdGui(QWidget):
         self.sk_hint_tim = QTimer()
         self.sk_hint_tim.setSingleShot(True)
         self.sk_hint_tim.timeout.connect(self.on_timer)
+        cfg = CfgTransient()
+        geo = cfg.get(cfg.GEOMETRY)
+        if geo:
+            self.restoreGeometry(geo)
 
     def closeEvent(self, event):
         super().closeEvent(event)
+        if not self.cs_gui.ext_toggle:
+            self.cs_gui.on_cons_ext_btn_clk()
+        cfg = CfgTransient()
+        cfg.set(cfg.GEOMETRY, self.saveGeometry())
         Cfg().save()
         unregister()  # Uninstall the resident function
         xp_worker.keep_running = False
-        exit(0)
+        if self.exit:
+            exit(0)
 
     @staticmethod
     def db_s_box_get(val, prec, step, func):
@@ -201,13 +211,13 @@ class CoEdGui(QWidget):
     @flow
     @Slot(object)
     def on_in_edit(self, obj):
-        xp('on_in_edit', obj, obj.TypeId)
+        xp('on_in_edit', obj, obj.TypeId, **_ob_g)
         if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
             ed_info = Gui.ActiveDocument.InEditInfo
-            xp('ed_info', ed_info)
+            xp('ed_info', ed_info, **_ob_g)
             if (ed_info is not None) and (ed_info[0].TypeId == ObjType.SKETCH_OBJECT):
-                xp('ed_info[0]', id(ed_info[0]), 'self.sketch', id(self.sketch))
-                xp('self.sketch is ed_info', self.sketch is ed_info[0])
+                xp('ed_info[0]', id(ed_info[0]), 'self.sketch', id(self.sketch), **_ob_g)
+                xp('self.sketch is ed_info', self.sketch is ed_info[0], **_ob_g)
                 if self.sketch is not ed_info[0]:
                     self.up_cur_table()
             # self.show()
@@ -216,9 +226,9 @@ class CoEdGui(QWidget):
     @flow
     @Slot(object)
     def on_reset_edit(self, obj):
-        xp('on_reset_edit', obj, obj.TypeId)
+        xp('on_reset_edit', obj, obj.TypeId, **_ob_g)
         ed_info = Gui.ActiveDocument.InEditInfo
-        xp('ed_info', ed_info)
+        xp('ed_info', ed_info, **_ob_g)
         if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
             # self.hide()
             self.showMinimized()
@@ -312,6 +322,7 @@ class CoEdGui(QWidget):
     @flow
     def prep_table(self, tbl: QTableWidget):
         tbl.horizontalHeader().setVisible(True)
+        tbl.verticalHeader().setVisible(False)
         tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         tbl.setColumnHidden(0, True)
         tbl.sortItems(1, Qt.AscendingOrder)

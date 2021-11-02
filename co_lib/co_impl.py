@@ -203,16 +203,27 @@ class CoEd:
                 co_list = self.cs.constraints
                 lo = Lookup(sk)
                 for idx, item in enumerate(co_list):
-                    s1, s2 = lo.lookup_ui_names(ConsTrans(item.co_idx, item.type_id, item.sub_type, item.fmt))
+                    s1, s2 = lo.lookup_ui_names(ConsTrans(item.cs_idx, item.type_id, item.sub_type, item.fmt))
                     leaf_item: Element = doc.createElement('item')
                     leaf_item.setAttribute('idx', str(idx))
+                    leaf_item.setAttribute('name', item.name)
                     leaf_item.setAttribute('type_id', item.type_id)
                     leaf_item.setAttribute('sub_type', f'{item.sub_type}')
                     leaf_item.setAttribute('item', f'{item}')
-                    text: Element = doc.createTextNode(f'{s2} {s1}')
+                    text: Element = doc.createTextNode(f'{s2} : {s1}')
                     leaf_item.appendChild(text)
                     leaf_cons.appendChild(leaf_item)
                 root.appendChild(leaf_cons)
+
+                leaf_exp: Element = doc.createElement('ExpressionEngine')
+                ee = obj.ExpressionEngine
+                for idx, item in enumerate(ee):
+                    leaf_item: Element = doc.createElement('item')
+                    leaf_item.setAttribute('idx', str(idx))
+                    text: Element = doc.createTextNode(f'{item}')
+                    leaf_item.appendChild(text)
+                    leaf_exp.appendChild(leaf_item)
+                root.appendChild(leaf_exp)
 
                 leaf_shape_edge: Element = doc.createElement('Shape.Edges')
                 for idx, edg in enumerate(obj.Shape.Edges):
@@ -436,7 +447,7 @@ class CoEd:
                 for idx, item in enumerate(co_list):
                     xp(f"idx: '{idx}' type_id: '{item.type_id}' sub_type: '{item.sub_type}' item: {item}", **_go)
                     # ct = ConType(item.type_id)
-                    s1, s2 = lo.lookup_ui_names(ConsTrans(item.co_idx, item.type_id, item.sub_type, item.fmt))
+                    s1, s2 = lo.lookup_ui_names(ConsTrans(item.cs_idx, item.type_id, item.sub_type, item.fmt))
                     xp(' ', s2, **_go)
                     xp(' ', list(s1), **_go)
                     # if ct == ConType.COINCIDENT:

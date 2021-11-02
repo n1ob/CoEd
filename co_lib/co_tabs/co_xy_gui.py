@@ -125,10 +125,10 @@ class XyGui:
         with wait_cursor():
             mod: QItemSelectionModel = self.xy_tbl_wid.selectionModel()
             rows: List[QModelIndex] = mod.selectedRows(0)
-            create_list: List[XyEdge] = [x.data() for x in rows]
+            create_list: List[XyEdge] = [x.data(Qt.UserRole) for x in rows]
             xp('create_list', create_list, **_xy)
             for idx in rows:
-                xp('row', idx.row(), ':', idx.data(), **_xy)
+                xp('row', idx.row(), ':', idx.data(Qt.UserRole), **_xy)
             self.xy.dist_create(create_list, x, y)
         self.update_table()
 
@@ -156,7 +156,7 @@ class XyGui:
                     continue
             self.xy_tbl_wid.insertRow(0)
             w_item = QTableWidgetItem()
-            w_item.setData(Qt.DisplayRole, item)
+            w_item.setData(Qt.UserRole, item)
             xp('col 3', item.geo_idx, **_xy)
             self.xy_tbl_wid.setItem(0, 0, w_item)
 
@@ -197,7 +197,7 @@ class XyGui:
         ed_info = Gui.ActiveDocument.InEditInfo
         sk_name = ed_info[0].Name
         for item in indexes:
-            xy: XyEdge = item.data()
+            xy: XyEdge = item.data(Qt.UserRole)
             xp(f'row: {str(item.row())} idx: {xy.geo_idx} cons: {xy}', **_xy)
             t = Lookup.translate_ui_name(xy.geo_idx, False)
             Gui.Selection.addSelection(doc_name, sk_name, f'{t}')

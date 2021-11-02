@@ -110,9 +110,9 @@ class PaGui:
         with wait_cursor():
             mod: QItemSelectionModel = self.pa_tbl_wid.selectionModel()
             rows: List[QModelIndex] = mod.selectedRows(0)
-            create_list: List[PaEdge] = [x.data() for x in rows]
+            create_list: List[PaEdge] = [x.data(Qt.UserRole) for x in rows]
             for idx in rows:
-                xp('row', idx.row(), ':', idx.data(), **_pa)
+                xp('row', idx.row(), ':', idx.data(Qt.UserRole), **_pa)
             self.pa.create(create_list)
         self.update_table()
 
@@ -139,7 +139,7 @@ class PaGui:
                 continue
             self.pa_tbl_wid.insertRow(0)
             w_item2 = QTableWidgetItem()
-            w_item2.setData(Qt.DisplayRole, item)
+            w_item2.setData(Qt.UserRole, item)
             self.pa_tbl_wid.setItem(0, 0, w_item2)
 
             t = Lookup.translate_ui_name(item.geo_idx)
@@ -193,7 +193,7 @@ class PaGui:
         ed_info = Gui.ActiveDocument.InEditInfo
         sk_name = ed_info[0].Name
         for item in indexes:
-            pa: PaEdge = item.data()
+            pa: PaEdge = item.data(Qt.UserRole)
             xp(f'row: {str(item.row())} idx: {pa.geo_idx} len: {pa.y_angel:.2f} {pa.edg_differences}', **_pa)
             t = Lookup.translate_ui_name(pa.geo_idx, False)
             Gui.Selection.addSelection(doc_name, sk_name, f'{t}')

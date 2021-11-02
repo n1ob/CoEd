@@ -161,14 +161,14 @@ class HvEdges(QObject):
                     in lo.extern_points('E')
                     if geo.TypeId == GeoType.LINE_SEGMENT]
         # geo_lst += [(idx, len_, True, True) for idx, len_ in lo.extern_points()]
-        xp(geo_lst)
+        xp(geo_lst, **_hv)
         len_geo = len(geo_lst)
         for x in range(len_geo):
             idx, line, c, e = geo_lst[x]
             line: Part.LineSegment
             y_angle: float = self.__alpha(App.Vector(line.StartPoint), App.Vector(line.EndPoint))
             edg = HvEdge(idx, y_angle, App.Vector(line.StartPoint), App.Vector(line.EndPoint), c, e)
-            xp(f'HvEdge: {idx} {y_angle:.2f} {fmt_vec(App.Vector(line.StartPoint))} {fmt_vec(App.Vector(line.EndPoint))} c {c} e {e}')
+            xp(f'HvEdge: {idx} {y_angle:.2f} {fmt_vec(App.Vector(line.StartPoint))} {fmt_vec(App.Vector(line.EndPoint))} c {c} e {e}', **_hv)
             self._angles.append(edg)
         self._angles.sort(key=attrgetter('y_angel'))
         self.base.flags.reset(Dirty.HV_EDGES)
