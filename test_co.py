@@ -278,6 +278,39 @@ class MyTest(unittest.TestCase):
         self.app.exec_()
         # Cfg().save()
 
+    def testExp(self):
+        self.single_sketch()
+        App.getDocument(DOC).getObject(SKETCH).addGeometry(
+            Part.LineSegment(App.Vector(3.000000, 11.000000, 0), App.Vector(3.000000, 3.000000, 0)), False)
+        App.getDocument(DOC).getObject(SKETCH).addConstraint(Sketcher.Constraint('Vertical', 0))
+        App.getDocument(DOC).getObject(SKETCH).addGeometry(
+            Part.LineSegment(App.Vector(4.000000, 2.000000, 0), App.Vector(12.000000, 2.000000, 0)), False)
+        App.getDocument(DOC).getObject(SKETCH).addConstraint(Sketcher.Constraint('Horizontal', 1))
+        App.getDocument(DOC).getObject(SKETCH).addGeometry(
+            Part.LineSegment(App.Vector(5.000000, 4.000000, 0), App.Vector(12.000000, 9.000000, 0)), False)
+        App.getDocument(DOC).getObject(SKETCH).addConstraint(
+            Sketcher.Constraint('DistanceY', 0, 2, 0, 1, 8.000000))
+        App.getDocument(DOC).getObject(SKETCH).setDatum(2, App.Units.Quantity('8.000000 mm'))
+        App.getDocument(DOC).getObject(SKETCH).renameConstraint(2, u'test1')
+        App.getDocument(DOC).getObject(SKETCH).addConstraint(
+            Sketcher.Constraint('DistanceX', 1, 1, 1, 2, 8.000000))
+        App.getDocument(DOC).getObject(SKETCH).setDatum(3, App.Units.Quantity('8.000000 mm'))
+        App.getDocument(DOC).getObject(SKETCH).renameConstraint(3, u'test2')
+        App.getDocument(DOC).getObject(SKETCH).addConstraint(
+            Sketcher.Constraint('DistanceX', 2, 1, 2, 2, 7.000000))
+        App.getDocument(DOC).getObject(SKETCH).setDatum(4, App.Units.Quantity('7.000000 mm'))
+        App.getDocument(DOC).getObject(SKETCH).renameConstraint(4, u'test3')
+        App.getDocument(DOC).getObject(SKETCH).addConstraint(
+            Sketcher.Constraint('DistanceY', 2, 1, 2, 2, 5.000000))
+        App.getDocument(DOC).getObject(SKETCH).setDatum(5, App.Units.Quantity('5.000000 mm'))
+        App.getDocument(DOC).getObject(SKETCH).renameConstraint(5, u'test4')
+        App.ActiveDocument.recompute()
+
+        App.getDocument(DOC).recompute()
+        register()
+        self.ex = main_g(self.ActiveSketch, self.app)
+        self.app.exec_()
+
     def tearDown(self) -> None:
         print("tearDown")
         # unregister()  # Uninstall the resident function

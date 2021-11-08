@@ -2153,7 +2153,7 @@ QTableView > QWidget > QTextEdit:read-only,
 QTableView > QWidget > QTimeEdit:read-only,
 QTableView > QWidget > QDateEdit:read-only,
 QTableView > QWidget > QDateTimeEdit:read-only {
-    color: black;
+    color: white;
     background-color: transparent;
     border-color: transparent;
 }
