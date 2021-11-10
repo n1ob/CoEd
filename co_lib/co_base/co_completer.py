@@ -3,12 +3,17 @@ from __future__ import annotations
 import sys
 from itertools import count
 from typing import Union, List, Callable
-
+import FreeCAD as App
+import FreeCADGui as Gui
+import Sketcher
 from PySide2.QtCore import Qt, QRect, QModelIndex, Slot, Signal
 from PySide2.QtGui import QKeyEvent, QStandardItemModel, QStandardItem, QFocusEvent, QMouseEvent
 from PySide2.QtWidgets import QLineEdit, QCompleter, QWidget, QVBoxLayout, QApplication, QAbstractItemView, QTableWidget
 
+from co_lib.co_base.co_cmn import DIM_CS, ConType
 from co_lib.co_base.co_logger import xp_worker, xp, flow
+from co_lib.co_tabs.co_cs import Constraint
+
 '''
 Referencing objects
 You can reference an object by its DataName or by its DataLabel. In the case of a DataLabel, it must be enclosed in 
@@ -27,9 +32,162 @@ may omit its name and just use Constraints[16].
 # xp_worker.log_path_set('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/coed.log')
 
 SEPARATORS = ['~', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
-                   '+', '{', '}', '|', ':', '"', "'", "<", ">", "?", ",",
+                   '+', '{', '}', '|', ':', '"', "'", "?", ",",
                    "/", ";", '[', ']', '\\', '\n', '\t', '=', '-', ' ', '']
-# ".",
+# "." the path separator
+# "<", ">" for label
+
+
+class DocTreeModel:
+
+    def __init__(self):
+        self.root = Root(Node(''))
+        self.root_node: Node = self.root.root_node
+        self.doc_props()
+        self.root.sort()
+
+    def doc_props(self):
+        obj_lst = App.ActiveDocument.Objects
+        lst: List[Node] = list()
+        for obj in obj_lst:
+            n = Node(obj.Name)
+            lst.append(n)
+            for name in obj.PropertiesList:
+                self.collect_nodes(obj, n, name)
+            if obj.Label:
+                cl = n.clone()
+                cl.data = f'<<{obj.Label}>>'
+                lst.append(cl)
+        self.root_node.add_children(lst)
+
+    def collect_nodes(self, obj, node, name):
+        prop_typ = obj.getTypeIdOfProperty(name)
+        if prop_typ == 'Sketcher::PropertyConstraintList':
+            node.add_children(self.constraint_list(obj, name))
+        elif prop_typ == 'App::PropertyPlacement':
+            node.add_child(self.placement(name))
+        elif prop_typ == 'App::PropertyBool':
+            node.add_child(Node(name))
+        elif prop_typ == 'App::PropertyFloat':
+            node.add_child(Node(name))
+        elif prop_typ == 'Part::PropertyPartShape':
+            node.add_child(Node(name))
+        elif prop_typ == 'App::PropertyInteger':
+            node.add_child(Node(name))
+        elif prop_typ == 'Part::PropertyGeometryList':
+            node.add_child(Node(name))
+        elif prop_typ == 'App::PropertyLength':
+            node.add_child(Node(name))
+        elif prop_typ == 'App::PropertyArea':
+            node.add_child(Node(name))
+        elif prop_typ == 'App::PropertyVectorDistance':
+            node.add_child(self.vector(name))
+        elif prop_typ == 'App::PropertyVector':
+            node.add_child(self.vector(name))
+        elif prop_typ == 'App::PropertyVectorList':
+            node.add_children(self.vector_lst(obj, name))
+        elif prop_typ == 'App::PropertyAngle':
+            node.add_child(Node(name))
+        elif prop_typ == 'App::PropertyDistance':
+            node.add_child(Node(name))
+        elif prop_typ == 'App::PropertyBoolList':
+            node.add_children(self.bool_lst(obj, name))
+
+    def bool_lst(self, obj, name) -> List[Node]:
+        lst: List[bool] = obj.getPropertyByName(name)
+        res = list()
+        for i, x in enumerate(lst):
+            s = f'{name}[{i}]'
+            n = Node(s)
+            res.append(n)
+        return res
+
+    def vector_lst(self, obj, name) -> List[Node]:
+        lst: List[App.Vector] = obj.getPropertyByName(name)
+        res = list()
+        for i, x in enumerate(lst):
+            s = f'{name}[{i}]'
+            n = Node(s)
+            n.add_child(Node('x'))
+            n.add_child(Node('y'))
+            n.add_child(Node('z'))
+            res.append(n)
+        return res
+
+    def vector(self, name) -> Node:
+        n = Node(name)
+        n.add_child(Node('x'))
+        n.add_child(Node('y'))
+        n.add_child(Node('z'))
+        return n
+
+    def constraint_list(self, obj, name) -> List[Node]:
+        # Constraints[?]
+        # Constraints.'Label'
+        dim_lst = list()
+        co_list: List[Sketcher.Constraint] = obj.getPropertyByName(name)
+        dim_named_lst = list()
+        for idx, item in enumerate(co_list):
+            ct: ConType = ConType(item.Type)
+            if ct.value in DIM_CS:
+                if item.Name:
+                    dim_named_lst.append((idx, item))
+                else:
+                    dim_lst.append((idx, item))
+        res: List[Node] = list()
+        for i, x in dim_lst:
+            res.append(Node(f'Constraints[{i}]'))
+        if dim_named_lst:
+            n = Node('Constraints')
+            for i, y in dim_named_lst:
+                n.add_child(Node(y.Name))
+            res.append(n)
+        return res
+
+    def placement(self, name) -> Node:
+        res: List[Node] = list()
+        n = Node(name)
+        b = n.add_child(Node('Base'))
+        b.add_child(Node('Length'))
+        b.add_child(Node('x'))
+        b.add_child(Node('y'))
+        b.add_child(Node('z'))
+        m = n.add_child(Node('Matrix'))
+        for x in range(4):
+            for y in range(4):
+                s = f'A{x}{y}'
+                m.add_child(Node(s))
+        r = n.add_child(Node('Rotation'))
+        r1 = r.add_child(Node('Axis'))
+        r1.add_child(Node('x'))
+        r1.add_child(Node('y'))
+        r1.add_child(Node('z'))
+        r.add_child(Node('Angle'))
+        res.append(b)
+        res.append(m)
+        res.append(r)
+        return n
+
+    def props(self):
+        xp('get props')
+        ao = App.ActiveDocument.ActiveObject
+        ob = App.ActiveDocument.Objects
+        lst = list()
+        for x in ob:
+            lst.append(f'<!--{x.Name} Content ------------------------------------>')
+            lst.append(x.Content)
+            lst.append(f'<!--{x.Name} Properties ------------------------------------>')
+            for y in x.PropertiesList:
+                lst.append(y)
+                try:
+                    lst.append(f'ByName {x}: {str(x.getPropertyByName(y))}')
+                    lst.append(f'Status {x}: {str(x.getPropertyStatus(y))}')
+                    lst.append(f'TypeId {x}: {str(x.getTypeIdOfProperty(y))}')
+                    lst.append(f'Type   {x}: {str(x.getTypeOfProperty(y))}')
+                    lst.append(f'---------------------------------------------------------------')
+                except Exception as ex:
+                    lst.append(str(ex))
+        return '\n'.join(lst)
 
 
 class Node:
@@ -46,16 +204,33 @@ class Node:
         self.children.append(n)
         return n
 
+    def add_children(self, lst: List[Node]):
+        for n in lst:
+            n.parent = self
+            self.children.append(n)
+        pass
+
+    def clone(self) -> Node:
+        n = Node(self.data)
+        n.parent = self.parent
+        n.add_children(self.children)
+        return n
+
 
 class Root:
     def __init__(self, n=None):
         self.root_node: Union[Node, None] = n
 
     def __str__(self) -> str:
-        return f'{self.root}'
+        return f'{self.root_node}'
 
-    def root(self) -> Union[Node, None]:
-        return self.root_node
+    @property
+    def root_node(self) -> Union[Node, None]:
+        return self.__root_node
+
+    @root_node.setter
+    def root_node(self, value):
+        self.__root_node = value
 
     def add_root(self, n: Node) -> Node:
         self.root_node = n
@@ -357,7 +532,7 @@ class PathCompleter(QCompleter):
 if __name__ == "__main__":
 
     ro = Root(Node(''))
-    r = ro.root()
+    r = ro.root_node()
     r3 = r.add_child(Node('obj14'))
     r1 = r.add_child(Node('tree'))
     r1_1 = r1.add_child(Node('branch'))

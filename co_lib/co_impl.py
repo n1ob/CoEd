@@ -19,6 +19,7 @@ from xml.dom.minidom import Element, Document
 import FreeCAD as App
 import Part
 import Sketcher
+from FreeCAD import Placement
 from PySide2.QtCore import Slot
 
 from .co_base.co_cmn import fmt_vec, GeoType, ObjType
@@ -103,8 +104,7 @@ class CoEd:
         else:
             self.flags.all()
 
-    @flow(short=True)
-    def geo_xml_get(self) -> str:
+    def geo_xml_get2(self) -> str:
         # for xml display in ui
         s: List[str] = list()
         for idx, item in enumerate(self.sketch.Geometry):
@@ -125,6 +125,26 @@ class CoEd:
                 xp('geo_xml_get unexpected', item.TypeId, **_go)
                 s.append(str(item))
         return ''.join(s)
+
+    @flow(short=True)
+    def geo_xml_get(self) -> str:
+        lst = list()
+        # lst.append(self.geo_xml_get2())
+        # lst = self.sketch.PropertiesList
+        # lst.append(self.sketch.Name)
+        # lst.append(self.sketch.FullName)
+        # lst = self.sketch.supportedProperties()
+        lst.append('<!-- Sketch Content ------------------------------------>\n')
+        lst.append(self.sketch.Content)
+        lst.append('<!-- Sketch Properties ------------------------------------>\n')
+        for x in self.sketch.PropertiesList:
+            lst.append(x)
+            lst.append(f'ByName {x}: {str(self.sketch.getPropertyByName(x))}')
+            lst.append(f'Status {x}: {str(self.sketch.getPropertyStatus(x))}')
+            lst.append(f'TypeId {x}: {str(self.sketch.getTypeIdOfProperty(x))}')
+            lst.append(f'Type   {x}: {str(self.sketch.getTypeOfProperty(x))}')
+            lst.append(f'---------------------------------------------------------------')
+        return '\n'.join(lst)
 
     @flow(short=True)
     def sketch_info_xml_get(self) -> str:

@@ -22,12 +22,12 @@ import Sketcher
 from PySide2.QtCore import Slot, QItemSelectionModel, QModelIndex, Qt, QSize, Signal, QPoint
 from PySide2.QtGui import QIcon, QCursor, QClipboard
 from PySide2.QtWidgets import QBoxLayout, QWidget, QGroupBox, QLabel, QTableWidget, QComboBox, QPushButton, \
-    QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView, QAbstractItemView, QCheckBox, QMenu, QAction, QLineEdit
+    QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView, QAbstractItemView, QCheckBox, QMenu, QAction
 
 from .co_cs import Constraints, Constraint
 from .. import co_impl, co_gui
 from ..co_base.co_cmn import ConType, wait_cursor, TableLabel, pt_typ_str, ObjType, block_signals, DIM_CS, NO_DIM_CS
-from ..co_base.co_completer import PathCompleter, Root, Node, LineEdit, TableLineEdit
+from ..co_base.co_completer import Root, TableLineEdit, DocTreeModel
 from ..co_base.co_flag import ConsTrans, Cs
 from ..co_base.co_logger import xp, _cs, flow, _ev, Profile, seq_gen
 from ..co_base.co_lookup import Lookup
@@ -432,7 +432,7 @@ class CsGui:
             b: Dict[str, str] = err.args[0]
             xp('eval/set expressions result:', e, 'RuntimeError:', b.get('sErrMsg'))
             return False
-        except Exception as err:
+        except BaseException as err:
             xp('eval/set expressions result', e, 'Exception', err)
             return False
         return True
@@ -445,47 +445,18 @@ class CsGui:
             if not txt:
                 return True
             e = self.sketch.evalExpression(txt)
+            s = f'eval_expressions: {e}\n'
+            App.Console.PrintMessage(s)
             xp('eval_expressions:', e)
         except RuntimeError as err:
             b: Dict[str, str] = err.args[0]
             xp('eval_expressions:', e, 'RuntimeError:', b.get('sErrMsg'))
             # xp('result', e, 'RuntimeError', err)
             return False
-        except Exception as err:
+        except BaseException as err:
             xp('eval_expressions', e, 'Exception', err)
             return False
         return True
-
-        # e = None
-        # try:
-        #     e = self.sketch.evalExpression(le.text())
-        #     xp('result', e)
-        # except RuntimeError as err:
-        #     for x in err.args:
-        #         b: Dict[str, str] = x
-        #         xp(b.get('sErrMsg'))
-        #     xp('result', e)
-        #     xp('RuntimeError', err)
-        #     le.setText(str(le.item.exp))
-        #     return
-        # except Exception as err:
-        #     xp('result', e)
-        #     xp('Exception', err)
-        #     le.setText(str(le.item.exp))
-        #     return
-        # le.item.exp = le.text()
-        # if le.item.name:
-        #     s = f'.Constraints.{le.item.name}'
-        # else:
-        #     s = f'Constraints[{le.item.cs_idx}]'
-        # try:
-        #     self.sketch.setExpression(s, le.text())
-        # except RuntimeError as err:
-        #     xp('err msg')
-        #     xp('RuntimeError', err)
-        #     le.setText(str(le.item.exp))
-        #     return
-        # self.sketch.recompute()
 
     @flow
     def task_up(self, cs):
@@ -501,7 +472,7 @@ class CsGui:
         __sorting_enabled = self.cons_tbl_wid.isSortingEnabled()
         self.cons_tbl_wid.setSortingEnabled(False)
         cs_list: List[Constraint] = result
-        root = self.exp_tree(cs_list)
+        root = self.exp_tree()
         with block_signals(self.cons_tbl_wid):
             for idx, item in enumerate(cs_list):
                 xp('idx, item', idx, item, **_cs)
@@ -541,7 +512,7 @@ class CsGui:
                         w_item.setFlags(w_item.flags() & ~Qt.ItemIsEditable)
                         self.cons_tbl_wid.setItem(0, self.__EXP_COL, w_item)
                     else:
-                        le = TableLineEdit(item, root.root(), item.driving, self.cons_tbl_wid)
+                        le = TableLineEdit(item, root.root_node, item.driving, self.cons_tbl_wid)
                         le.set_exp_eval(self.eval_expressions)
                         le.set_exp_save(self.set_expression)
                         le.txt_edited.connect(self.on_li_edt_changed)
@@ -553,26 +524,9 @@ class CsGui:
         self.cons_tbl_wid.resizeRowsToContents()
         self.cons_tbl_wid.setUpdatesEnabled(True)
 
-    @staticmethod
-    def exp_tree(lst: List[Constraint]) -> Root:
-        dim_lst = list()
-        dim_named_lst = list()
-        for item in lst:
-            if item.type_id in DIM_CS:
-                if item.name:
-                    dim_named_lst.append(item)
-                else:
-                    dim_lst.append(item)
-        ro = Root(Node(''))
-        r: Node = ro.root()
-        for x in dim_lst:
-            r.add_child(Node(f'Constraints[{x.cs_idx}]'))
-        if dim_named_lst:
-            r1 = r.add_child(Node('Constraints'))
-            for y in dim_named_lst:
-                r1.add_child(Node(y.name))
-        ro.sort()
-        return ro
+    def exp_tree(self) -> Root:
+        t = DocTreeModel()
+        return t.root
 
     @flow
     def chg_icon(self, item):
