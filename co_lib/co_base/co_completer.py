@@ -11,7 +11,7 @@ from PySide2.QtGui import QKeyEvent, QStandardItemModel, QStandardItem, QFocusEv
 from PySide2.QtWidgets import QLineEdit, QCompleter, QWidget, QVBoxLayout, QApplication, QAbstractItemView, QTableWidget
 
 from co_lib.co_base.co_cmn import DIM_CS, ConType
-from co_lib.co_base.co_logger import xp_worker, xp, flow
+from co_lib.co_base.co_logger import xp_worker, xp, flow, _cp
 
 '''
 Referencing objects
@@ -303,7 +303,7 @@ class LineEdit(QLineEdit):
 
     @flow
     def on_ret_pressed(self):
-        xp('on_ret_pressed')
+        xp('on_ret_pressed', **_cp)
         self.exp_save_passed = self.exp_save(self.item, self.text())
 
     @flow
@@ -334,38 +334,38 @@ class LineEdit(QLineEdit):
 
     @flow
     def keyPressEvent(self, event: QKeyEvent):
-        xp('event', event.key())
+        xp('event', event.key(), **_cp)
         if self.isReadOnly():
-            xp('isReadOnly')
+            xp('isReadOnly', **_cp)
             if event.key() in [Qt.Key_F2, Qt.Key_Enter, Qt.Key_Return]:
-                xp('Qt.Key_F2, Qt.Key_Enter, Qt.Key_Return')
+                xp('Qt.Key_F2, Qt.Key_Enter, Qt.Key_Return', **_cp)
                 self.setReadOnly(False)
                 # self.setStyleSheet(self.edit_focus_in)
                 return
 
         if not self.p.isVisible() and not self.isReadOnly():
-            xp('~isReadOnly & ~isVisible')
+            xp('~isReadOnly & ~isVisible', **_cp)
             if event.key() in [Qt.Key_Up, Qt.Key_Down]:
-                xp('Qt.Key_Up, Qt.Key_Down')
+                xp('Qt.Key_Up, Qt.Key_Down', **_cp)
                 return
             if event.key() in [Qt.Key_Enter, Qt.Key_Return]:
-                xp('Qt.Key_Enter, Qt.Key_Return')
+                xp('Qt.Key_Enter, Qt.Key_Return', **_cp)
                 if self.exp_eval_passed:
-                    xp('eval_passed')
+                    xp('eval_passed', **_cp)
                     self.on_ret_pressed()
                     if self.exp_save_passed:
-                        xp('save_passed')
+                        xp('save_passed', **_cp)
                         self.backup = self.text()
                         self.parent: QWidget
                         self.parent.setFocus()
                     else:
-                        xp('~save_passed')
+                        xp('~save_passed', **_cp)
                         return
                 else:
-                    xp('~eval_passed')
+                    xp('~eval_passed', **_cp)
                 return
             if event.key() in [Qt.Key_Escape]:
-                xp('Qt.Key_Escape')
+                xp('Qt.Key_Escape', **_cp)
                 self.setText(self.backup)
                 self.parent: QWidget
                 self.parent.setFocus()
@@ -374,17 +374,17 @@ class LineEdit(QLineEdit):
         super().keyPressEvent(event)
 
         if self.isReadOnly():
-            xp('isReadOnly -> return')
+            xp('isReadOnly -> return', **_cp)
             return
 
         if self.auto_trigger:
-            xp('auto_trigger')
+            xp('auto_trigger', **_cp)
             self.detect_auto()
 
         if self.is_shortcut(event):
-            xp('is_shortcut')
+            xp('is_shortcut', **_cp)
             self.cur_sel_prefix = self.get_prefix()
-            xp(f'prefix <{self.cur_sel_prefix}>')
+            xp(f'prefix <{self.cur_sel_prefix}>', **_cp)
             if self.cur_sel_prefix:
                 self.show_completions(self.cur_sel_prefix)
             else:
@@ -404,20 +404,20 @@ class LineEdit(QLineEdit):
 
     @flow
     def show_completions(self, completion_prefix):
-        xp('completion_prefix', completion_prefix)
+        xp('completion_prefix', completion_prefix, **_cp)
         self.c.setCompletionPrefix(completion_prefix)
         if self.c.currentCompletion():
             # self.c.popup().setCurrentIndex(self.c.completionModel().index(0, 0))
             p: QAbstractItemView = self.c.popup()
             cr: QRect = self.cursorRect()
-            xp('cursorRect', cr)
+            xp('cursorRect', cr, **_cp)
             cr.setWidth(p.sizeHintForColumn(0) + p.verticalScrollBar().sizeHint().width())
             self.c.complete(cr)
-            xp(f'popup hasFocus {self.p.hasFocus()}')
+            xp(f'popup hasFocus {self.p.hasFocus()}', **_cp)
 
     @flow
     def on_insert_completion(self, completion):
-        xp('completion', completion)
+        xp('completion', completion, **_cp)
         cur_pos = self.cursorPosition()
         self.setSelection(cur_pos - len(self.cur_sel_prefix), len(self.cur_sel_prefix))
         self.insert(completion)
@@ -436,7 +436,7 @@ class LineEdit(QLineEdit):
     def get_prefix(self):
         txt = self.text()
         cur_pos = self.cursorPosition()
-        xp('ln txt', txt, 'cur pos', cur_pos)
+        xp('ln txt', txt, 'cur pos', cur_pos, **_cp)
         s = ''
         if txt:
             sep_before = -1
@@ -448,7 +448,7 @@ class LineEdit(QLineEdit):
                 s = txt[:cur_pos]
             else:
                 s = txt[sep_before + 1:cur_pos]
-        xp('prefix out', s)
+        xp('prefix out', s, **_cp)
         return s
 
 
@@ -509,7 +509,7 @@ class PathCompleter(QCompleter):
     def add_items(self, parent, root: Node, path=''):
         item = QStandardItem()
         item.setText(root.data)
-        xp('add_items: in:', root.data, 'child', root.has_children(), 'sep', root.doc_sep)
+        xp('add_items: in:', root.data, 'child', root.has_children(), 'sep', root.doc_sep, **_cp)
         if path:
             if root.parent and root.parent.doc_sep:
                 data = f'{path}#{root.data}'
@@ -518,7 +518,7 @@ class PathCompleter(QCompleter):
         else:
             data = f'{root.data}'
         # data = f'{path}.{root.data}' if path else f'{root.data}'
-        xp('add_items: data:', data)
+        xp('add_items: data:', data, **_cp)
         item.setData(data, PathCompleter.PathRole)
         parent.appendRow(item)
         for x in root.children:
@@ -526,16 +526,16 @@ class PathCompleter(QCompleter):
 
     @flow
     def splitPath(self, path: str):
-        xp('path in:', path, 'prefix:', self.completionPrefix(), 'comp:', self.currentCompletion())
+        xp('path in:', path, 'prefix:', self.completionPrefix(), 'comp:', self.currentCompletion(), **_cp)
         if not path.startswith('.'):
             path = '.' + path
-        xp('path out', re.split('#|\.', path))
+        xp('path out', re.split('#|\.', path), **_cp)
         return re.split('#|\.', path)
 
     @flow
     def pathFromIndex(self, idx):
         idx: QModelIndex
-        xp('idx in:', idx.row(), 'data out:', idx.data(PathCompleter.PathRole))
+        xp('idx in:', idx.row(), 'data out:', idx.data(PathCompleter.PathRole), **_cp)
         return idx.data(PathCompleter.PathRole)
 
 

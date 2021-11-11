@@ -123,6 +123,7 @@ class GeoGui(QObject):
         for doc in docs:
             lst.append(f'<!--{doc} Document ------------------------------------>')
             d: App.Document = App.getDocument(doc)
+            lst.append(d.Content)
             ob = d.Objects
             for x in ob:
                 lst.append(f'<!--{x.Name} Content ------------------------------------>')
@@ -138,6 +139,12 @@ class GeoGui(QObject):
                         lst.append(f'---------------------------------------------------------------')
                     except Exception as ex:
                         lst.append(str(ex))
+
+        do: App.Document = App.ActiveDocument
+        [lst.append(x) for x in do.supportedTypes()]
+        ao: Sketcher.SketchObject = App.ActiveDocument.ActiveObject
+        [lst.append(x) for x in ao.supportedProperties()]
+
         return '\n'.join(lst)
 
 

@@ -358,6 +358,7 @@ topics = {
     'cf': XpConf('all.tab.config', prepend='cf').k(),
     'go': XpConf('all.tab.geo', prepend='go').k(),
 
+    'cp': XpConf('all.completer', prepend='cp').k(),
     'tr': XpConf('all.thread', prepend='tr', thread_info=True).k(),
     'ti': XpConf('all.q_thread', prepend='ti').k(),
     'ly': XpConf('all.layout', prepend='ly').k(),
@@ -379,6 +380,7 @@ _pa = topics['pa']
 _cf = topics['cf']
 _go = topics['go']
 
+_cp = topics['cp']
 _tr = topics['tr']
 _ti = topics['ti']
 _ly = topics['ly']
