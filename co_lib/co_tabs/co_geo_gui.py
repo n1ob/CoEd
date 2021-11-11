@@ -13,6 +13,8 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
+from typing import List
+
 import FreeCAD as App
 import FreeCADGui as Gui
 import Sketcher
@@ -98,8 +100,9 @@ class GeoGui(QObject):
 
     @flow
     def on_geo_btn_clk_geo(self):
-        self.geo_btn_geo.setDisabled(True)
-        self.controller_geo = Controller(Worker(self.task_geo, self.impl), self.on_result_geo, 'Geometry')
+        self.geo_txt_edt.setPlainText(self.props())
+        # self.geo_btn_geo.setDisabled(True)
+        # self.controller_geo = Controller(Worker(self.task_geo, self.impl), self.on_result_geo, 'Geometry')
 
     @flow
     def on_geo_btn_clk_vert(self):
@@ -112,6 +115,30 @@ class GeoGui(QObject):
         sk_name = ed_info[0].Name
         for x in ls:
             Gui.Selection.addSelection(doc_name, sk_name, x)
+
+    def props(self):
+        xp('get props')
+        docs = App.listDocuments()
+        lst = list()
+        for doc in docs:
+            lst.append(f'<!--{doc} Document ------------------------------------>')
+            d: App.Document = App.getDocument(doc)
+            ob = d.Objects
+            for x in ob:
+                lst.append(f'<!--{x.Name} Content ------------------------------------>')
+                lst.append(x.Content)
+                lst.append(f'<!--{x.Name} Properties ------------------------------------>')
+                for y in x.PropertiesList:
+                    lst.append(y)
+                    try:
+                        lst.append(f'ByName {x}: {str(x.getPropertyByName(y))}')
+                        lst.append(f'Status {x}: {str(x.getPropertyStatus(y))}')
+                        lst.append(f'TypeId {x}: {str(x.getTypeIdOfProperty(y))}')
+                        lst.append(f'Type   {x}: {str(x.getTypeOfProperty(y))}')
+                        lst.append(f'---------------------------------------------------------------')
+                    except Exception as ex:
+                        lst.append(str(ex))
+        return '\n'.join(lst)
 
 
 if __name__ == '__main__':

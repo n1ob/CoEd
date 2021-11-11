@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import re
 import sys
-from itertools import count
 from typing import Union, List, Callable
+
 import FreeCAD as App
-import FreeCADGui as Gui
 import Sketcher
 from PySide2.QtCore import Qt, QRect, QModelIndex, Slot, Signal
 from PySide2.QtGui import QKeyEvent, QStandardItemModel, QStandardItem, QFocusEvent, QMouseEvent
@@ -12,7 +12,6 @@ from PySide2.QtWidgets import QLineEdit, QCompleter, QWidget, QVBoxLayout, QAppl
 
 from co_lib.co_base.co_cmn import DIM_CS, ConType
 from co_lib.co_base.co_logger import xp_worker, xp, flow
-from co_lib.co_tabs.co_cs import Constraint
 
 '''
 Referencing objects
@@ -28,14 +27,14 @@ may omit its name and just use Constraints[16].
 '''
 
 
-# it = count()
 # xp_worker.log_path_set('C:/Users/red/AppData/Roaming/JetBrains/PyCharmCE2021.2/scratches/coed.log')
 
-SEPARATORS = ['~', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
+SEPARATORS = ['~', '!', '@', '$', '%', '^', '&', '*', '(', ')',
                    '+', '{', '}', '|', ':', '"', "'", "?", ",",
-                   "/", ";", '[', ']', '\\', '\n', '\t', '=', '-', ' ', '']
+                   "/", ";", '\\', '\n', '\t', '=', '-', ' ', '']
 # "." the path separator
 # "<", ">" for label
+# '#', , '[', ']'
 
 
 class DocTreeModel:
@@ -43,57 +42,80 @@ class DocTreeModel:
     def __init__(self):
         self.root = Root(Node(''))
         self.root_node: Node = self.root.root_node
-        self.doc_props()
+        self.collect_doc_nodes()
         self.root.sort()
 
-    def doc_props(self):
-        obj_lst = App.ActiveDocument.Objects
+    def collect_doc_nodes(self):
+        doc_lst = App.listDocuments()
+        lst: List[Node] = list()
+        for doc_str in doc_lst:
+            doc: App.Document = App.getDocument(doc_str)
+            is_ad = doc is App.ActiveDocument
+            res = self.collect_obj_nodes(doc)
+            n = Node(doc.Name, True)
+            n.add_children(res)
+            lst.append(n)
+            if is_ad:
+                for x in res:
+                    self.root_node.add_child(x.clone())
+        self.root_node.add_children(lst)
+
+    def collect_obj_nodes(self, doc) -> List[Node]:
+        obj_lst = doc.Objects
         lst: List[Node] = list()
         for obj in obj_lst:
+            is_ao = obj is App.ActiveDocument.ActiveObject
+            res = self.collect_prop_nodes(obj)
             n = Node(obj.Name)
+            n.add_children(res)
             lst.append(n)
-            for name in obj.PropertiesList:
-                self.collect_nodes(obj, n, name)
             if obj.Label:
                 cl = n.clone()
                 cl.data = f'<<{obj.Label}>>'
                 lst.append(cl)
-        self.root_node.add_children(lst)
+            if is_ao:
+                for x in res:
+                    self.root_node.add_child(x.clone())
+        return lst
 
-    def collect_nodes(self, obj, node, name):
-        prop_typ = obj.getTypeIdOfProperty(name)
-        if prop_typ == 'Sketcher::PropertyConstraintList':
-            node.add_children(self.constraint_list(obj, name))
-        elif prop_typ == 'App::PropertyPlacement':
-            node.add_child(self.placement(name))
-        elif prop_typ == 'App::PropertyBool':
-            node.add_child(Node(name))
-        elif prop_typ == 'App::PropertyFloat':
-            node.add_child(Node(name))
-        elif prop_typ == 'Part::PropertyPartShape':
-            node.add_child(Node(name))
-        elif prop_typ == 'App::PropertyInteger':
-            node.add_child(Node(name))
-        elif prop_typ == 'Part::PropertyGeometryList':
-            node.add_child(Node(name))
-        elif prop_typ == 'App::PropertyLength':
-            node.add_child(Node(name))
-        elif prop_typ == 'App::PropertyArea':
-            node.add_child(Node(name))
-        elif prop_typ == 'App::PropertyVectorDistance':
-            node.add_child(self.vector(name))
-        elif prop_typ == 'App::PropertyVector':
-            node.add_child(self.vector(name))
-        elif prop_typ == 'App::PropertyVectorList':
-            node.add_children(self.vector_lst(obj, name))
-        elif prop_typ == 'App::PropertyAngle':
-            node.add_child(Node(name))
-        elif prop_typ == 'App::PropertyDistance':
-            node.add_child(Node(name))
-        elif prop_typ == 'App::PropertyBoolList':
-            node.add_children(self.bool_lst(obj, name))
+    def collect_prop_nodes(self, obj) -> List[Node]:
+        lst: List[Node] = list()
+        for name in obj.PropertiesList:
+            prop_typ = obj.getTypeIdOfProperty(name)
+            if prop_typ == 'Sketcher::PropertyConstraintList':
+                lst.extend(self.constraint_list(obj, name))
+            elif prop_typ == 'App::PropertyPlacement':
+                lst.append(self.placement(name))
+            elif prop_typ == 'App::PropertyBool':
+                lst.append(Node(name))
+            elif prop_typ == 'App::PropertyFloat':
+                lst.append(Node(name))
+            elif prop_typ == 'Part::PropertyPartShape':
+                lst.append(Node(name))
+            elif prop_typ == 'App::PropertyInteger':
+                lst.append(Node(name))
+            elif prop_typ == 'Part::PropertyGeometryList':
+                lst.append(Node(name))
+            elif prop_typ == 'App::PropertyLength':
+                lst.append(Node(name))
+            elif prop_typ == 'App::PropertyArea':
+                lst.append(Node(name))
+            elif prop_typ == 'App::PropertyVectorDistance':
+                lst.append(self.vector(name))
+            elif prop_typ == 'App::PropertyVector':
+                lst.append(self.vector(name))
+            elif prop_typ == 'App::PropertyVectorList':
+                lst.extend(self.vector_lst(obj, name))
+            elif prop_typ == 'App::PropertyAngle':
+                lst.append(Node(name))
+            elif prop_typ == 'App::PropertyDistance':
+                lst.append(Node(name))
+            elif prop_typ == 'App::PropertyBoolList':
+                lst.extend(self.bool_lst(obj, name))
+        return lst
 
-    def bool_lst(self, obj, name) -> List[Node]:
+    @staticmethod
+    def bool_lst(obj, name) -> List[Node]:
         lst: List[bool] = obj.getPropertyByName(name)
         res = list()
         for i, x in enumerate(lst):
@@ -102,7 +124,8 @@ class DocTreeModel:
             res.append(n)
         return res
 
-    def vector_lst(self, obj, name) -> List[Node]:
+    @staticmethod
+    def vector_lst(obj, name) -> List[Node]:
         lst: List[App.Vector] = obj.getPropertyByName(name)
         res = list()
         for i, x in enumerate(lst):
@@ -114,14 +137,16 @@ class DocTreeModel:
             res.append(n)
         return res
 
-    def vector(self, name) -> Node:
+    @staticmethod
+    def vector(name) -> Node:
         n = Node(name)
         n.add_child(Node('x'))
         n.add_child(Node('y'))
         n.add_child(Node('z'))
         return n
 
-    def constraint_list(self, obj, name) -> List[Node]:
+    @staticmethod
+    def constraint_list(obj, name) -> List[Node]:
         # Constraints[?]
         # Constraints.'Label'
         dim_lst = list()
@@ -144,7 +169,8 @@ class DocTreeModel:
             res.append(n)
         return res
 
-    def placement(self, name) -> Node:
+    @staticmethod
+    def placement(name) -> Node:
         res: List[Node] = list()
         n = Node(name)
         b = n.add_child(Node('Base'))
@@ -168,33 +194,13 @@ class DocTreeModel:
         res.append(r)
         return n
 
-    def props(self):
-        xp('get props')
-        ao = App.ActiveDocument.ActiveObject
-        ob = App.ActiveDocument.Objects
-        lst = list()
-        for x in ob:
-            lst.append(f'<!--{x.Name} Content ------------------------------------>')
-            lst.append(x.Content)
-            lst.append(f'<!--{x.Name} Properties ------------------------------------>')
-            for y in x.PropertiesList:
-                lst.append(y)
-                try:
-                    lst.append(f'ByName {x}: {str(x.getPropertyByName(y))}')
-                    lst.append(f'Status {x}: {str(x.getPropertyStatus(y))}')
-                    lst.append(f'TypeId {x}: {str(x.getTypeIdOfProperty(y))}')
-                    lst.append(f'Type   {x}: {str(x.getTypeOfProperty(y))}')
-                    lst.append(f'---------------------------------------------------------------')
-                except Exception as ex:
-                    lst.append(str(ex))
-        return '\n'.join(lst)
-
 
 class Node:
-    def __init__(self, s: str):
-        self.parent: Union[Node, None] = None
+    def __init__(self, s: str, doc_sep=False, parent=None):
+        self.parent: Union[Node, None] = parent
         self.children: List[Node] = list()
         self.data: str = s
+        self.doc_sep = doc_sep
 
     def __str__(self) -> str:
         return f'{self.data} {[str(x) for x in self.children]}'
@@ -210,11 +216,30 @@ class Node:
             self.children.append(n)
         pass
 
-    def clone(self) -> Node:
+    def has_children(self):
+        return len(self.children)
+
+    def clone_node(self) -> Node:
         n = Node(self.data)
         n.parent = self.parent
+        n.doc_sep = self.doc_sep
         n.add_children(self.children)
         return n
+
+    def clone(self) -> Node:
+        new = Node(self.data, self.doc_sep, self.parent)
+        for child in self.children:
+            new.add_child(child.clone())
+        return new
+
+    @staticmethod
+    def clone_tree(root: Node) -> Union[Node, None]:
+        if root is None:
+            return None
+        new = Node(root.data, root.doc_sep, root.parent)
+        for child in root.children:
+            new.add_child(Node.clone_tree(child))
+        return new
 
 
 class Root:
@@ -260,7 +285,6 @@ class LineEdit(QLineEdit):
         self.trigger_key = Qt.Key_Space
         self.trigger_chars = 2
         self.auto_trigger = True
-        # self.period_is_trigger = True
         self.p: QAbstractItemView = self.c.popup()
         # self.focus_out = f'background: #555555'
         # self.focus_in = f'background: #BBBBBB'
@@ -366,31 +390,9 @@ class LineEdit(QLineEdit):
             else:
                 self.show_completions('.')
 
-        # if self.period_is_trigger:
-        #     if event.key() == Qt.Key_Period:
-        #         self.detect_period()
-        # if self.c.popup().isVisible():
-        #     if not self.c.currentCompletion():
-        #         xp(next(it), '-> not currentCompletion')
-        #         self.hide_pop()
-        #     elif event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
-        #         xp(next(it), '-> is_enter')
-        #         self.hide_pop()
-        #     elif event.key() in [Qt.Key_Escape, Qt.Key_Backtab, Qt.Key_Left, Qt.Key_Right]:
-        #         xp(next(it), '-> is_escape')
-        #         self.hide_pop()
-
     # @flow
     def is_shortcut(self, event: QKeyEvent):
         return (event.modifiers() & Qt.ControlModifier) and (event.key() == self.trigger_key)
-
-    # @flow
-    # def detect_period(self):
-    #     self.hide_pop()
-    #     p = self.get_prefix()
-    #     if len(p) > 1:
-    #         self.cur_sel_prefix = p
-    #         self.show_completions(p)
 
     @flow
     def detect_auto(self):
@@ -465,8 +467,6 @@ class TableLineEdit(LineEdit):
         self.setReadOnly(True)
         self.setEnabled(driving)
         self.setContextMenuPolicy(Qt.NoContextMenu)
-        # self.completer = PathCompleter(comp_root)
-        # self.setCompleter(self.completer)
 
     @Slot()
     def re_edt_finished(self):
@@ -496,6 +496,7 @@ class PathCompleter(QCompleter):
         # self.completer.setFilterMode(Qt.MatchContains)
         self.setFilterMode(Qt.MatchStartsWith)
         self.setModelSorting(QCompleter.CaseInsensitivelySortedModel)
+        self.setMaxVisibleItems(12)
         # x: QAbstractItemView = self.popup()
 
     @flow
@@ -508,7 +509,16 @@ class PathCompleter(QCompleter):
     def add_items(self, parent, root: Node, path=''):
         item = QStandardItem()
         item.setText(root.data)
-        data = f'{path}.{root.data}' if path else f'{root.data}'
+        xp('add_items: in:', root.data, 'child', root.has_children(), 'sep', root.doc_sep)
+        if path:
+            if root.parent and root.parent.doc_sep:
+                data = f'{path}#{root.data}'
+            else:
+                data = f'{path}.{root.data}'
+        else:
+            data = f'{root.data}'
+        # data = f'{path}.{root.data}' if path else f'{root.data}'
+        xp('add_items: data:', data)
         item.setData(data, PathCompleter.PathRole)
         parent.appendRow(item)
         for x in root.children:
@@ -519,8 +529,8 @@ class PathCompleter(QCompleter):
         xp('path in:', path, 'prefix:', self.completionPrefix(), 'comp:', self.currentCompletion())
         if not path.startswith('.'):
             path = '.' + path
-        xp('path out', path.split('.'))
-        return path.split('.')
+        xp('path out', re.split('#|\.', path))
+        return re.split('#|\.', path)
 
     @flow
     def pathFromIndex(self, idx):
@@ -532,7 +542,7 @@ class PathCompleter(QCompleter):
 if __name__ == "__main__":
 
     ro = Root(Node(''))
-    r = ro.root_node()
+    r = ro.root_node
     r3 = r.add_child(Node('obj14'))
     r1 = r.add_child(Node('tree'))
     r1_1 = r1.add_child(Node('branch'))
