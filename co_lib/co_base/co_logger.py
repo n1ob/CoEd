@@ -331,20 +331,25 @@ def ind_dec(ident, dec):
         _IND[ident] = (0, next(_T_IDX))
 
 
-__perf_start: float = perf_counter()
-xp_worker: XpWorker = XpWorker()
+__perf_start = perf_counter()
+xp_worker = XpWorker()
+# __perf_start: float = perf_counter()
+# xp_worker: XpWorker = XpWorker()
 # ! shorter form for flow
-GLB_SHORT: bool = True
+GLB_SHORT = True
+# GLB_SHORT: bool = True
 # !shut up switch
-GLB_LOG: bool = True
+GLB_LOG = True
+# GLB_LOG: bool = True
 # ! print the header once
-GLB_HEADER: bool = True
+GLB_HEADER = True
+# GLB_HEADER: bool = True
 
 
 # '': use without kwargs
-# _xp_topic('', 'obs_sel')
+_xp_topic('', 'obs_sel')
 # _xp_topic('', 'flow', 'constraint')
-_xp_topic('')
+# _xp_topic('')
 
 
 topics = {

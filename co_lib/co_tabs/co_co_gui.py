@@ -25,7 +25,7 @@ from PySide2.QtWidgets import QWidget, QGroupBox, QLabel, QDoubleSpinBox, QPushB
 
 from .co_co import CoPoints, CoPoint, GeoId, GeoIdDist
 from .. import co_impl, co_gui
-from ..co_base.co_cmn import GeoPt, fmt_vec, pt_typ_str, wait_cursor, TableLabel, ColorTableItem, ObjType
+from ..co_base.co_cmn import GeoPt, fmt_vec, pt_typ_str, wait_cursor, TableLabel, ColorTableItem, ObjType, block_signals
 from ..co_base.co_logger import flow, xp, _co, _ev, xps, Profile
 from ..co_base.co_lookup import Lookup
 from ..co_base.co_observer import observer_block, observer_event_provider_get
@@ -44,6 +44,9 @@ class CoGui:
         self.co.created.connect(self.on_co_create)
         xp('co.creation_done.connect', **_ev)
         self.co.creation_done.connect(self.on_co_create_done)
+        self.evo = observer_event_provider_get()
+        self.evo.add_selection_ex.connect(self.on_add_selection_ex)
+        self.evo.clear_selection.connect(self.on_clear_selection)
 
         self.co_grp_box: QGroupBox = QGroupBox(None)
         self.co_lbl: QLabel = QLabel()
@@ -89,6 +92,18 @@ class CoGui:
 
     @flow
     @Slot(object)
+    def on_clear_selection(self, doc):
+        xp(f'on_clear_selection: doc:', str(doc), **_co)
+        self.update_table()
+
+    @flow
+    @Slot(object, object)
+    def on_add_selection_ex(self, obj, pnt):
+        xp(f'on_add_selection_ex: obj:', str(obj), **_ev)
+        self.select(obj, pnt)
+
+    @flow
+    @Slot(object)
     def on_in_edit(self, obj):
         if obj.TypeId == ObjType.VIEW_PROVIDER_SKETCH:
             ed_info = Gui.ActiveDocument.InEditInfo
@@ -130,7 +145,7 @@ class CoGui:
         return pt_list, cs
 
     @flow(short=True)
-    def on_result_up(self, result):
+    def on_result_up(self, result, id_lst: List[GeoId]):
         self.co_tbl_wid.setUpdatesEnabled(False)
         self.co_tbl_wid.setRowCount(0)
         __sorting_enabled = self.co_tbl_wid.isSortingEnabled()
@@ -144,34 +159,40 @@ class CoGui:
             res_lst.append(p)
         self.log_filter(res_lst)
         lo = Lookup(self.sketch)
-        for idx, pt in enumerate(res_lst):
-            if self.base.cfg_only_valid and (len(pt.pt_distance_lst) == 0):
-                continue
-            self.co_tbl_wid.insertRow(0)
-            w_item = QTableWidgetItem()
-            w_item.setData(Qt.UserRole, pt)
-            self.co_tbl_wid.setItem(0, 0, w_item)
-            # w_item = QTableWidgetItem()
-            # if pt.extern:
-            #     w_item.setForeground(QBrush(self.base.extern_color))
-            # elif pt.construct:
-            #     w_item.setForeground(QBrush(self.base.construct_color))
-            s1, s2 = lo.lookup_ui_names(GeoPt(pt.geo_id.idx, pt.geo_id.typ))
-            t = Lookup.translate_geo_idx(pt.geo_id.idx)
-            fmt = f"{s1} {t}.{pt_typ_str[pt.geo_id.typ]}"
-            # w_item.setText(fmt)
-            w_item = ColorTableItem(pt.construct, pt.extern, fmt)
-            self.co_tbl_wid.setItem(0, 1, w_item)
-            sn, sc, se = self.split(pt)
-            xp('norm', sn, 'const', sc, 'extern', se, **_co)
-            wid = TableLabel(sn, sc, se)
-            self.co_tbl_wid.setCellWidget(0, 2, wid)
-            xp('new row: Id', idx, fmt, sn, sc, **_co)
+        with block_signals(self.co_tbl_wid):
+            for idx, pt in enumerate(res_lst):
+                if self.base.cfg_only_valid and (len(pt.pt_distance_lst) == 0):
+                    continue
+                if not self.check(pt, id_lst):
+                    continue
+                self.co_tbl_wid.insertRow(0)
+                w_item = QTableWidgetItem()
+                w_item.setData(Qt.UserRole, pt)
+                self.co_tbl_wid.setItem(0, 0, w_item)
+                s1, s2 = lo.lookup_ui_names(GeoPt(pt.geo_id.idx, pt.geo_id.typ))
+                t = Lookup.translate_geo_idx(pt.geo_id.idx)
+                fmt = f"{s1} {t}.{pt_typ_str[pt.geo_id.typ]}"
+                w_item = ColorTableItem(pt.construct, pt.extern, fmt)
+                self.co_tbl_wid.setItem(0, 1, w_item)
+                sn, sc, se = self.split(pt)
+                xp('norm', sn, 'const', sc, 'extern', se, **_co)
+                wid = TableLabel(sn, sc, se)
+                self.co_tbl_wid.setCellWidget(0, 2, wid)
+                xp('new row: Id', idx, fmt, sn, sc, **_co)
         self.co_tbl_wid.setSortingEnabled(__sorting_enabled)
         hh: QHeaderView = self.co_tbl_wid.horizontalHeader()
         hh.resizeSections(QHeaderView.ResizeToContents)
         vh: QHeaderView = self.co_tbl_wid.verticalHeader()
         self.co_tbl_wid.setUpdatesEnabled(True)
+
+    def check(self, pt: CoPoint, id_lst: List[GeoId]):
+        xp('pt id', repr(pt.geo_id), 'id lst', repr(id_lst))
+        # xp('dst lst', pt.pt_distance_lst)
+        if id_lst is None:
+            return True
+        if pt.geo_id in id_lst:
+            return True
+        return False
 
     def split(self, pt: CoPoint):
         res_n = list()
@@ -190,10 +211,10 @@ class CoGui:
         return ' '.join(res_n), ' '.join(res_c), ' '.join(res_e)
 
     @flow
-    def update_table(self):
+    def update_table(self, id_lst=None):
         # self.ctrl_up = Controller(Worker(self.task_up, self.co), self.on_result_up, name='Coincident')
         res = self.task_up(self.co)
-        self.on_result_up(res)
+        self.on_result_up(res, id_lst)
     # -----------------------------------------------------------------------
 
     @flow
@@ -206,6 +227,38 @@ class CoGui:
                 xp(idx.row(), ':', idx.data(Qt.UserRole), **_co)
             self.co.create(create_list)
         self.update_table()
+
+    @flow
+    def select(self, obj, pnt):
+        xp('select_constraints', obj, pnt, **_co)
+        from_gui: bool = True
+        if App.Vector(pnt) == App.Vector(0, 0, 0):
+            from_gui = False
+        xp('from gui', from_gui, **_co)
+        obj: List[Gui.SelectionObject]
+        for sel_ex in obj:
+            res: List[GeoId] = list()
+            xp('sel_ex', sel_ex.FullName, **_co)
+            if sel_ex.TypeName == ObjType.SKETCH_OBJECT:
+                for sub_name in sel_ex.SubElementNames:
+                    typ, no = Lookup.deconstruct_ui_name(sub_name)
+                    if typ == 'Vertex':
+                        geo, pos = self.sketch.getGeoVertexIndex(no-1)
+                        res.append(GeoId(geo, pos))
+                        xp(f'received: gui: {from_gui} {typ} {no} geo: ({geo}.{pos})', **_co)
+                    elif typ == 'ExternalEdge':
+                        xp(f'received: gui: {from_gui} {typ} {no}', **_co)
+                    elif typ == 'Edge':
+                        xp(f'received: gui: {from_gui} {typ} {no}', **_co)
+                    elif typ == 'Constraint':
+                        xp(f'received: gui: {from_gui} {typ} {no}', **_co)
+                    else:
+                        xp(f'received: gui: {from_gui} {typ} {no}', **_co)
+                if not from_gui:
+                    xp('ignore if not from gui', **_co)
+                    return
+                # sk: Sketcher.Sketch = sel_ex.Object
+                self.update_table(id_lst=res)
 
     @flow
     def selected(self):

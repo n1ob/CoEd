@@ -260,6 +260,8 @@ class CfgTransient(CfgBase):
             return True
         elif val == CfgTransient.GEOMETRY:
             return None
+        elif val == CfgTransient.TRIGGER_CHARS:
+            return 2
         else:
             return None
 
@@ -269,7 +271,8 @@ class CfgTransient(CfgBase):
     HV_TOLERANCE: str = 'hv_tolerance'
     PA_TOLERANCE: str = 'pa_tolerance'
     SHOW_ONLY_VALID: str = 'only_valid'
-    __NAMES: Set[str] = {CO_TOLERANCE, EQ_TOLERANCE, HV_TOLERANCE, PA_TOLERANCE, SHOW_ONLY_VALID, GEOMETRY}
+    TRIGGER_CHARS: str = 'trigger_chars'
+    __NAMES: Set[str] = {CO_TOLERANCE, EQ_TOLERANCE, HV_TOLERANCE, PA_TOLERANCE, SHOW_ONLY_VALID, GEOMETRY, TRIGGER_CHARS}
 
 
 @cfg_decorator

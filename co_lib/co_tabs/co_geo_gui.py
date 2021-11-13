@@ -118,6 +118,14 @@ class GeoGui(QObject):
 
     def props(self):
         xp('get props')
+        i = self.sketch.ConstraintCount
+        for x in range(i):
+            try:
+                d = self.sketch.getDatum(x)
+                xp(d)
+            except TypeError as err:
+                xp(err)
+
         docs = App.listDocuments()
         lst = list()
         for doc in docs:

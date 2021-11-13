@@ -11,6 +11,8 @@ from PySide2.QtGui import QKeyEvent, QStandardItemModel, QStandardItem, QFocusEv
 from PySide2.QtWidgets import QLineEdit, QCompleter, QWidget, QVBoxLayout, QApplication, QAbstractItemView, QTableWidget
 
 from co_lib.co_base.co_cmn import DIM_CS, ConType
+from co_lib.co_base.co_config import CfgTransient
+from co_lib.co_base.co_flag import Cs
 from co_lib.co_base.co_logger import xp_worker, xp, flow, _cp
 
 '''
@@ -88,11 +90,23 @@ class DocTreeModel:
                 lst.append(self.placement(name))
             elif prop_typ == 'App::PropertyBool':
                 lst.append(Node(name))
+            elif prop_typ == 'App::PropertyBoolList':
+                lst.extend(self.bool_lst(obj, name))
             elif prop_typ == 'App::PropertyFloat':
                 lst.append(Node(name))
-            elif prop_typ == 'Part::PropertyPartShape':
-                lst.append(Node(name))
+            elif prop_typ == 'App::PropertyFloatList':
+                lst.extend(self.float_lst(obj, name))
             elif prop_typ == 'App::PropertyInteger':
+                lst.append(Node(name))
+            elif prop_typ == 'App::PropertyIntegerList':
+                lst.extend(self.int_lst(obj, name))
+            elif prop_typ == 'App::PropertyVector':
+                lst.append(self.vector(name))
+            elif prop_typ == 'App::PropertyVectorList':
+                lst.extend(self.vector_lst(obj, name))
+            elif prop_typ == 'App::PropertyVectorDistance':
+                lst.append(self.vector(name))
+            elif prop_typ == 'Part::PropertyPartShape':
                 lst.append(Node(name))
             elif prop_typ == 'Part::PropertyGeometryList':
                 lst.append(Node(name))
@@ -100,19 +114,31 @@ class DocTreeModel:
                 lst.append(Node(name))
             elif prop_typ == 'App::PropertyArea':
                 lst.append(Node(name))
-            elif prop_typ == 'App::PropertyVectorDistance':
-                lst.append(self.vector(name))
-            elif prop_typ == 'App::PropertyVector':
-                lst.append(self.vector(name))
-            elif prop_typ == 'App::PropertyVectorList':
-                lst.extend(self.vector_lst(obj, name))
             elif prop_typ == 'App::PropertyAngle':
                 lst.append(Node(name))
             elif prop_typ == 'App::PropertyDistance':
                 lst.append(Node(name))
-            elif prop_typ == 'App::PropertyBoolList':
-                lst.extend(self.bool_lst(obj, name))
         return lst
+
+    @staticmethod
+    def int_lst(obj, name) -> List[Node]:
+        lst: List[int] = obj.getPropertyByName(name)
+        res = list()
+        for i, x in enumerate(lst):
+            s = f'{name}[{i}]'
+            n = Node(s)
+            res.append(n)
+        return res
+
+    @staticmethod
+    def float_lst(obj, name) -> List[Node]:
+        lst: List[float] = obj.getPropertyByName(name)
+        res = list()
+        for i, x in enumerate(lst):
+            s = f'{name}[{i}]'
+            n = Node(s)
+            res.append(n)
+        return res
 
     @staticmethod
     def bool_lst(obj, name) -> List[Node]:
@@ -283,7 +309,8 @@ class LineEdit(QLineEdit):
         self.c.activated.connect(self.on_insert_completion)
         self.cur_sel_prefix = ''
         self.trigger_key = Qt.Key_Space
-        self.trigger_chars = 2
+        self.cfg = CfgTransient()
+        self.trigger_chars = self.cfg.get(CfgTransient.TRIGGER_CHARS)
         self.auto_trigger = True
         self.p: QAbstractItemView = self.c.popup()
         # self.focus_out = f'background: #555555'
@@ -460,7 +487,14 @@ class TableLineEdit(LineEdit):
     def __init__(self, item, comp_root: Node, driving: bool, parent):
         super().__init__(item, comp_root, parent)
         self.item = item
-        self.setText(item.exp)
+        if Cs.V in item.sub_type:
+            if item.expression:
+                self.setText(item.expression)
+            else:
+                self.setText(str(item.datum))
+                self.backup = str(item.datum)
+        else:
+            self.setText(item.expression)
         self.editingFinished.connect(self.re_edt_finished)
         self.textEdited.connect(self.re_txt_edited)
         self.returnPressed.connect(self.re_ret_pressed)

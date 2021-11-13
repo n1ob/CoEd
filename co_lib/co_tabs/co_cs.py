@@ -52,7 +52,8 @@ class Constraint:
         self.ico_no = ''
         self.ico_alt_no = ''
         self.name = ''
-        self.exp = ''
+        self.expression = ''
+        self.datum = ''
 
     def __str__(self):
         return self.fmt.format(self.first, pt_typ_str[self.first_pos],  # (0),(1)
@@ -159,7 +160,7 @@ class Constraints(QObject):
         exp_list = self.sketch.ExpressionEngine
         d_exp: Dict[Union[str, int], str] = dict()
         for idx_, exp in exp_list:
-            idx: str
+            idx_: str
             exp: str
             if idx_.startswith('Constraints['):
                 i = int(''.join(filter(str.isdigit, idx_)))
@@ -401,9 +402,10 @@ class Constraints(QObject):
             con.active = item.IsActive
             con.virtual = item.InVirtualSpace
             con.name = item.Name
+            con.datum = self.sketch.getDatum(con.cs_idx) if Cs.V in con.sub_type else ''
             lo: Union[str, int] = con.name if con.name else con.cs_idx
             if lo in d_exp.keys():
-                con.exp = d_exp[lo]
+                con.expression = d_exp[lo]
             self.__constraints.append(con)
 
         self.base.flags.reset(Dirty.CONSTRAINTS)

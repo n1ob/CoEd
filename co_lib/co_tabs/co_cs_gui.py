@@ -29,7 +29,7 @@ from .. import co_impl, co_gui
 from ..co_base.co_cmn import ConType, wait_cursor, TableLabel, pt_typ_str, ObjType, block_signals, DIM_CS, NO_DIM_CS
 from ..co_base.co_completer import Root, TableLineEdit, DocTreeModel
 from ..co_base.co_flag import ConsTrans, Cs
-from ..co_base.co_logger import xp, _cs, flow, _ev, Profile, seq_gen
+from ..co_base.co_logger import xp, _cs, flow, _ev, Profile, seq_gen, _cp
 from ..co_base.co_lookup import Lookup
 from ..co_base.co_observer import observer_block, observer_event_provider_get
 
@@ -275,7 +275,7 @@ class CsGui:
         self.update_table()
 
     @flow
-    @Slot(object)
+    @Slot(object, object)
     def on_add_selection_ex(self, obj, pnt):
         xp(f'on_add_selection_ex: obj:', str(obj), **_ev)
         self.select_constraints(obj, pnt)
@@ -298,7 +298,7 @@ class CsGui:
                 le.setEnabled(True)
             else:
                 le.setEnabled(False)
-                item.exp = ''
+                item.expression = ''
                 le.setText('')
         self.sketch.recompute()
 
@@ -419,21 +419,21 @@ class CsGui:
             else:
                 s = f'Constraints[{item.cs_idx}]'
             if not txt:
-                xp('remove expression', s)
+                xp('remove expression', s, **_cp)
                 self.sketch.setExpression(s, None)
-                item.exp = ''
+                item.expression = ''
             else:
                 e = self.sketch.evalExpression(txt)
-                xp('evalExpression result', e)
+                xp('evalExpression result', e, **_cp)
                 self.sketch.setExpression(s, txt)
-                item.exp = txt
+                item.expression = txt
                 self.sketch.recompute()
         except RuntimeError as err:
             b: Dict[str, str] = err.args[0]
-            xp('eval/set expressions result:', e, 'RuntimeError:', b.get('sErrMsg'))
+            xp('eval/set expressions result:', e, 'RuntimeError:', b.get('sErrMsg'), **_cp)
             return False
         except BaseException as err:
-            xp('eval/set expressions result', e, 'Exception', err)
+            xp('eval/set expressions result', e, 'Exception', err, **_cp)
             return False
         return True
 
@@ -441,20 +441,20 @@ class CsGui:
     def eval_expressions(self, txt) -> bool:
         e = None
         try:
-            xp('expression:', txt)
+            xp('expression:', txt, **_cp)
             if not txt:
                 return True
             e = self.sketch.evalExpression(txt)
             s = f'eval_expressions: {e}\n'
             App.Console.PrintMessage(s)
-            xp('eval_expressions:', e)
+            xp('eval_expressions:', e, **_cp)
         except RuntimeError as err:
             b: Dict[str, str] = err.args[0]
-            xp('eval_expressions:', e, 'RuntimeError:', b.get('sErrMsg'))
+            xp('eval_expressions:', e, 'RuntimeError:', b.get('sErrMsg'), **_cp)
             # xp('result', e, 'RuntimeError', err)
             return False
         except BaseException as err:
-            xp('eval_expressions', e, 'Exception', err)
+            xp('eval_expressions', e, 'Exception', err, **_cp)
             return False
         return True
 

@@ -76,6 +76,7 @@ class CoEdGui(QWidget):
         self.evo.undo_doc.connect(self.on_undo_doc)
         self.evo.obj_recomputed.connect(self.on_obj_recomputed)
         self.cfg_only_valid: bool = True
+        # flags: Qt.WindowFlags = Qt.Tool
         flags: Qt.WindowFlags = Qt.Window
         flags |= Qt.WindowStaysOnTopHint
         self.setWindowFlags(flags)
