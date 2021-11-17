@@ -124,6 +124,7 @@ class PaGui:
 
     @flow(short=True)
     def on_result_up(self, result):
+        self.pa_btn_create.setDisabled(True)
         self.pa_tbl_wid.setUpdatesEnabled(False)
         self.pa_tbl_wid.setRowCount(0)
         __sorting_enabled = self.pa_tbl_wid.isSortingEnabled()

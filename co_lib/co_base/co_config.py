@@ -203,7 +203,7 @@ class CfgTransient(CfgBase):
     def get(self, key):
         if key in CfgTransient.__NAMES:
             if key in self.data.keys():
-                val = self.convert_out(key, self.data[key])
+                val = self._convert_out(key, self.data[key])
                 return val
             else:
                 return self.default(key)
@@ -213,7 +213,7 @@ class CfgTransient(CfgBase):
     @flow
     def set(self, key, val):
         if key in CfgTransient.__NAMES:
-            val = self.convert_in(val)
+            val = self._convert_in(val)
             self.data = {**self.data, **{key: val}}
             self.save()
             # self.data[key] = val
@@ -233,14 +233,14 @@ class CfgTransient(CfgBase):
         self.save_delegate(self.data)
 
     @flow
-    def convert_in(self, val: Any) -> Any:
+    def _convert_in(self, val: Any) -> Any:
         if isinstance(val, QByteArray):
             qb64 = val.toBase64()
             return bytes(qb64).decode('UTF-8')
         return val
 
     @flow
-    def convert_out(self, key, val):
+    def _convert_out(self, key, val):
         if key == CfgTransient.GEOMETRY:
             enc = val.encode('UTF-8')
             return QByteArray.fromBase64(enc)
@@ -258,6 +258,8 @@ class CfgTransient(CfgBase):
             return 0.1
         elif val == CfgTransient.SHOW_ONLY_VALID:
             return True
+        elif val == CfgTransient.CO_EXT_MATCH:
+            return False
         elif val == CfgTransient.GEOMETRY:
             return None
         elif val == CfgTransient.TRIGGER_CHARS:
@@ -272,7 +274,8 @@ class CfgTransient(CfgBase):
     PA_TOLERANCE: str = 'pa_tolerance'
     SHOW_ONLY_VALID: str = 'only_valid'
     TRIGGER_CHARS: str = 'trigger_chars'
-    __NAMES: Set[str] = {CO_TOLERANCE, EQ_TOLERANCE, HV_TOLERANCE, PA_TOLERANCE, SHOW_ONLY_VALID, GEOMETRY, TRIGGER_CHARS}
+    CO_EXT_MATCH: str = 'co_ext_match'
+    __NAMES: Set[str] = {CO_TOLERANCE, EQ_TOLERANCE, HV_TOLERANCE, PA_TOLERANCE, SHOW_ONLY_VALID, GEOMETRY, TRIGGER_CHARS, CO_EXT_MATCH}
 
 
 @cfg_decorator

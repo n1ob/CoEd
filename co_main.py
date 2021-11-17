@@ -31,8 +31,7 @@ from PySide2.QtCore import Qt
 from PySide2.QtWidgets import QWidget, QMessageBox, QApplication
 
 from co_lib.co_base.co_cmn import wait_cursor
-from co_lib.co_base.co_config import Cfg
-from co_lib.co_base.co_logger import xps, xp, stack_tracer, xp_worker
+from co_lib.co_base.co_logger import xps, xp, stack_tracer
 from co_lib.co_gui import CoEdGui
 from co_lib.co_impl import CoEd
 
@@ -81,8 +80,7 @@ xps(__name__)
 
 if __name__ == '__main__':
 
-    import Part
-    from co_lib.co_base.co_observer import register, unregister
+    from co_lib.co_base.co_observer import register
 
 
     def add_geo(o: object, b: bool = False):

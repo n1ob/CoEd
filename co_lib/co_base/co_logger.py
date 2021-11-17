@@ -347,7 +347,7 @@ GLB_HEADER = True
 
 
 # '': use without kwargs
-_xp_topic('', 'obs_sel')
+_xp_topic('', 'equal')
 # _xp_topic('', 'flow', 'constraint')
 # _xp_topic('')
 

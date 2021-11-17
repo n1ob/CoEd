@@ -139,6 +139,7 @@ class XyGui:
 
     @flow(short=True)
     def on_result_up(self, result):
+        self.xy_btn_create.setDisabled(True)
         self.xy_tbl_wid.setUpdatesEnabled(False)
         self.xy_tbl_wid.setRowCount(0)
         __sorting_enabled = self.xy_tbl_wid.isSortingEnabled()

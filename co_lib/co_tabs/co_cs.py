@@ -80,6 +80,7 @@ class Constraints(QObject):
         self.evo = observer_event_provider_get()
         self.evo.in_edit.connect(self.on_in_edit)
         self.__constraints: List[Constraint] = list()
+        self.tol = str(pathlib.Path(CfgBase.BASE_DIR, self.ico['krankenwagen']))
 
     @property
     def constraints(self):
@@ -146,6 +147,7 @@ class Constraints(QObject):
         'Icon48': 'co_lib/Icon/Sketcher_ToggleConstraint.svg',
         'Icon49': 'co_lib/Icon/Sketcher_Toggle_Constraint_Driven.svg',
         'Icon50': 'co_lib/Icon/Sketcher_Toggle_Constraint_Driving.svg',
+        'krankenwagen': 'co_lib/Icon/krankenwagen.svg',
     }
 
     @flow

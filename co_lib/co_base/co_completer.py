@@ -7,11 +7,11 @@ from typing import Union, List, Callable
 import FreeCAD as App
 import Sketcher
 from PySide2.QtCore import Qt, QRect, QModelIndex, Slot, Signal
-from PySide2.QtGui import QKeyEvent, QStandardItemModel, QStandardItem, QFocusEvent, QMouseEvent
+from PySide2.QtGui import QKeyEvent, QStandardItemModel, QStandardItem, QFocusEvent, QMouseEvent, QFont
 from PySide2.QtWidgets import QLineEdit, QCompleter, QWidget, QVBoxLayout, QApplication, QAbstractItemView, QTableWidget
 
 from co_lib.co_base.co_cmn import DIM_CS, ConType
-from co_lib.co_base.co_config import CfgTransient
+from co_lib.co_base.co_config import CfgTransient, CfgFonts
 from co_lib.co_base.co_flag import Cs
 from co_lib.co_base.co_logger import xp_worker, xp, flow, _cp
 
@@ -486,6 +486,9 @@ class TableLineEdit(LineEdit):
 
     def __init__(self, item, comp_root: Node, driving: bool, parent):
         super().__init__(item, comp_root, parent)
+        cfg_f = CfgFonts()
+        f: QFont = cfg_f.font_get(cfg_f.FONT_TABLE)
+        self.setFont(f)
         self.item = item
         if Cs.V in item.sub_type:
             if item.expression:

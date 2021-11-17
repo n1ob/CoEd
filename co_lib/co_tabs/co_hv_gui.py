@@ -140,6 +140,7 @@ class HvGui:
 
     @flow(short=True)
     def on_result_up(self, result):
+        self.hv_btn_create.setDisabled(False)
         self.hv_tbl_wid.setUpdatesEnabled(False)
         self.hv_tbl_wid.setRowCount(0)
         __sorting_enabled = self.hv_tbl_wid.isSortingEnabled()

@@ -24,10 +24,11 @@ from PySide2.QtWidgets import QWidget, QGroupBox, QPushButton, QTableWidget, QBo
 
 from .co_eq import EqEdges, EqEdge, GeoDiff
 from .. import co_impl, co_gui
-from ..co_base.co_cmn import wait_cursor, TableLabel, ColorTableItem
+from ..co_base.co_cmn import wait_cursor, TableLabel, ColorTableItem, ObjType
+from ..co_base.co_config import CfgTransient
 from ..co_base.co_logger import xp, flow, _eq, _ev, xps
 from ..co_base.co_lookup import Lookup
-from ..co_base.co_observer import observer_block
+from ..co_base.co_observer import observer_block, observer_event_provider_get
 
 _QL = QBoxLayout
 
@@ -43,6 +44,10 @@ class EqGui:
         self.eq.created.connect(self.on_eq_created)
         xp('eq.creation_done.connect', **_ev)
         self.eq.creation_done.connect(self.on_eq_create_done)
+        self.cfg = CfgTransient()
+        self.evo = observer_event_provider_get()
+        self.evo.add_selection_ex.connect(self.on_add_selection_ex)
+        self.evo.clear_selection.connect(self.on_clear_selection)
 
         self.eq_grp_box: QGroupBox = QGroupBox(None)
         self.eq_lbl: QLabel = QLabel()
@@ -83,6 +88,18 @@ class EqGui:
         return table_widget
 
     @flow
+    @Slot(object)
+    def on_clear_selection(self, doc):
+        xp(f'on_clear_selection: doc:', str(doc), **_eq)
+        self.update_table()
+
+    @flow
+    @Slot(object, object)
+    def on_add_selection_ex(self, obj, pnt):
+        xp(f'on_add_selection_ex: obj:', str(obj), **_ev)
+        self.select(obj, pnt)
+
+    @flow
     @Slot(int, int)
     def on_eq_created(self, i, j):
         xp('Eq created', i, j, **_ev)
@@ -113,7 +130,8 @@ class EqGui:
         return edge_list, cs
 
     @flow(short=True)
-    def on_result_up(self, result):
+    def on_result_up(self, result, id_lst: List[int]):
+        self.eq_btn_create.setDisabled(True)
         self.eq_tbl_wid.setUpdatesEnabled(False)
         self.eq_tbl_wid.setRowCount(0)
         __sorting_enabled = self.eq_tbl_wid.isSortingEnabled()
@@ -126,6 +144,8 @@ class EqGui:
             res_lst.append(ed)
         for idx, item in enumerate(res_lst):
             if self.base.cfg_only_valid and (len(item.edg_differences) == 0):
+                continue
+            if not self.check(item, id_lst):
                 continue
             self.eq_tbl_wid.insertRow(0)
             w_item2 = QTableWidgetItem()
@@ -144,10 +164,20 @@ class EqGui:
         hh.resizeSections(QHeaderView.ResizeToContents)
         self.eq_tbl_wid.setUpdatesEnabled(True)
 
+    def check(self, item: EqEdge, id_lst: List[int]):
+        if id_lst is None:
+            return True
+        xp('edg idx', item.geo_idx, 'id lst', repr(id_lst))
+        xp('dst lst', [x.geo_idx for x in item.edg_differences])
+        lst = [x.geo_idx in id_lst for x in item.edg_differences]
+        if item.geo_idx in id_lst:
+            return True
+        if self.cfg.get(CfgTransient.CO_EXT_MATCH) and any(lst):
+            return True
+        return False
+
     def split(self, pt: EqEdge):
-        res_n = list()
-        res_c = list()
-        res_e = list()
+        res_n, res_c, res_e = list(), list(), list()
         for x in pt.edg_differences:
             x: GeoDiff
             t = Lookup.translate_geo_idx(x.geo_idx)
@@ -161,10 +191,10 @@ class EqGui:
         return ' '.join(res_n), ' '.join(res_c), ' '.join(res_e)
 
     @flow
-    def update_table(self):
+    def update_table(self, id_lst=None):
         # self.ctrl_up = Controller(Worker(self.task_up, self.eq), self.on_result_up, 'Equal')
         res = self.task_up(self.eq)
-        self.on_result_up(res)
+        self.on_result_up(res, id_lst)
 
     @flow
     def create(self):
@@ -176,6 +206,37 @@ class EqGui:
                 xp('row', idx.row(), ':', idx.data(Qt.UserRole), **_eq)
             self.eq.create(create_list)
         self.update_table()
+
+    @flow
+    def select(self, obj, pnt):
+        xp('select_eq', obj, pnt, **_eq)
+        from_gui: bool = True
+        if App.Vector(pnt) == App.Vector(0, 0, 0):
+            from_gui = False
+        xp('from gui', from_gui, **_eq)
+        obj: List[Gui.SelectionObject]
+        for sel_ex in obj:
+            res: List[int] = list()
+            xp('sel_ex', sel_ex.FullName, **_eq)
+            if sel_ex.TypeName == ObjType.SKETCH_OBJECT:
+                for sub_name in sel_ex.SubElementNames:
+                    typ, no = Lookup.deconstruct_ui_name(sub_name)
+                    if typ == 'Vertex':
+                        geo, pos = self.sketch.getGeoVertexIndex(no-1)
+                        xp(f'received: gui: {from_gui} {typ} {no} geo: ({geo}.{pos})', **_eq)
+                    elif typ == 'ExternalEdge':
+                        xp(f'received: gui: {from_gui} {typ} {no}', **_eq)
+                    elif typ == 'Edge':
+                        res.append(no-1)
+                        xp(f'received: gui: {from_gui} {typ} {no}', **_eq)
+                    elif typ == 'Constraint':
+                        xp(f'received: gui: {from_gui} {typ} {no}', **_eq)
+                    else:
+                        xp(f'received: gui: {from_gui} {typ} {no}', **_eq)
+                if not from_gui:
+                    xp('ignore if not from gui', **_eq)
+                    return
+                self.update_table(id_lst=res)
 
     @flow
     def selected(self):

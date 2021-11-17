@@ -26,6 +26,7 @@ from PySide2.QtWidgets import QWidget, QGroupBox, QLabel, QDoubleSpinBox, QPushB
 from .co_co import CoPoints, CoPoint, GeoId, GeoIdDist
 from .. import co_impl, co_gui
 from ..co_base.co_cmn import GeoPt, fmt_vec, pt_typ_str, wait_cursor, TableLabel, ColorTableItem, ObjType, block_signals
+from ..co_base.co_config import CfgTransient
 from ..co_base.co_logger import flow, xp, _co, _ev, xps, Profile
 from ..co_base.co_lookup import Lookup
 from ..co_base.co_observer import observer_block, observer_event_provider_get
@@ -40,6 +41,7 @@ class CoGui:
         self.impl: co_impl.CoEd = self.base.base
         self.co: CoPoints = self.impl.co_points
         self.tab_co = QWidget(None)
+        self.cfg = CfgTransient()
         xp('co.created.connect', **_ev)
         self.co.created.connect(self.on_co_create)
         xp('co.creation_done.connect', **_ev)
@@ -146,6 +148,7 @@ class CoGui:
 
     @flow(short=True)
     def on_result_up(self, result, id_lst: List[GeoId]):
+        self.co_btn_create.setDisabled(True)
         self.co_tbl_wid.setUpdatesEnabled(False)
         self.co_tbl_wid.setRowCount(0)
         __sorting_enabled = self.co_tbl_wid.isSortingEnabled()
@@ -186,18 +189,19 @@ class CoGui:
         self.co_tbl_wid.setUpdatesEnabled(True)
 
     def check(self, pt: CoPoint, id_lst: List[GeoId]):
-        xp('pt id', repr(pt.geo_id), 'id lst', repr(id_lst))
-        # xp('dst lst', pt.pt_distance_lst)
         if id_lst is None:
             return True
+        xp('pt id', repr(pt.geo_id), 'id lst', repr(id_lst))
+        xp('dst lst', [x.geo_id for x in pt.pt_distance_lst])
+        lst = [x.geo_id in id_lst for x in pt.pt_distance_lst]
         if pt.geo_id in id_lst:
+            return True
+        if self.cfg.get(CfgTransient.CO_EXT_MATCH) and any(lst):
             return True
         return False
 
     def split(self, pt: CoPoint):
-        res_n = list()
-        res_c = list()
-        res_e = list()
+        res_n, res_c, res_e = list(), list(), list()
         for x in pt.pt_distance_lst:
             x: GeoIdDist
             t = Lookup.translate_geo_idx(x.geo_id.idx)
@@ -257,7 +261,6 @@ class CoGui:
                 if not from_gui:
                     xp('ignore if not from gui', **_co)
                     return
-                # sk: Sketcher.Sketch = sel_ex.Object
                 self.update_table(id_lst=res)
 
     @flow

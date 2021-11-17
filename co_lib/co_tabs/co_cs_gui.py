@@ -13,6 +13,7 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
+from operator import attrgetter
 from threading import Lock
 from typing import List, Set, Callable, Tuple, Dict
 
@@ -22,7 +23,7 @@ import Sketcher
 from PySide2.QtCore import Slot, QItemSelectionModel, QModelIndex, Qt, QSize, Signal, QPoint
 from PySide2.QtGui import QIcon, QCursor, QClipboard
 from PySide2.QtWidgets import QBoxLayout, QWidget, QGroupBox, QLabel, QTableWidget, QComboBox, QPushButton, \
-    QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView, QAbstractItemView, QCheckBox, QMenu, QAction
+    QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView, QAbstractItemView, QCheckBox, QMenu, QAction, QFrame
 
 from .co_cs import Constraints, Constraint
 from .. import co_impl, co_gui
@@ -37,6 +38,7 @@ _QL = QBoxLayout
 
 
 class TableCheckBox(QCheckBox):
+
     state_chg = Signal(object, object, int)
 
     def __init__(self, item: Constraint, state: bool, enable: bool, func: Callable, parent=None, *args, **kwargs):
@@ -52,6 +54,99 @@ class TableCheckBox(QCheckBox):
     def re_emit(self, state: int):
         pt = self.pos()
         self.state_chg.emit(pt, self.cs_item, state)
+
+
+class PopCheckBox(QCheckBox):
+
+    state_chg = Signal(object, int)
+
+    def __init__(self, id_: ConType, state: bool, enable: bool, func: Callable, parent=None, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.id = id_
+        self.stateChanged.connect(self.re_emit)
+        self.setStyleSheet("QCheckBox::indicator {width: 20px; height: 20px;}")
+        self.setEnabled(enable)
+        self.setChecked(state)
+        self.state_chg.connect(func)
+
+    @Slot(int)
+    def re_emit(self, state: int):
+        self.state_chg.emit(self.id, state)
+
+
+class QHLine(QFrame):
+    def __init__(self):
+        super(QHLine, self).__init__()
+        # self.setMinimumWidth(1)
+        # self.setFixedHeight(20)
+        self.setLineWidth(0)
+        self.setFrameShape(QFrame.HLine)
+        self.setFrameShadow(QFrame.Plain)
+        # self.setFrameShadow(QFrame.Sunken)
+        # self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        s = 'QFrame {background-color:#aaaaaa}'
+        self.setStyleSheet(s)
+
+
+class CsSelector(QWidget):
+
+    state_chg = Signal(object)
+
+    def __init__(self, parent, cs_set: Set[ConType], cs_state: Set[ConType]):
+        super(CsSelector, self).__init__(parent)
+        flags: Qt.WindowFlags = Qt.Tool
+        self.setWindowFlags(flags)
+        li = list(cs_set)
+        li.sort(key=attrgetter('value'))
+        layout = QVBoxLayout()
+        self.chk_lst: List[PopCheckBox] = list()
+        self.c = QCheckBox('All')
+        self.c.setStyleSheet("QCheckBox::indicator {width: 20px; height: 20px;}")
+        self.c.setTristate(True)
+        self.c.setCheckState(Qt.PartiallyChecked)
+        self.c.stateChanged.connect(self.on_all)
+        layout.addWidget(self.c)
+        layout.addWidget(QHLine())
+        for x in li:
+            chk = PopCheckBox(x, x in cs_state, True, self.on_chk)
+            chk.setText(x.value)
+            layout.addWidget(chk)
+            self.chk_lst.append(chk)
+        self.setLayout(layout)
+        self.save_state: Set[ConType] = set()
+        self.block = False
+
+    def on_all(self, state):
+        xp('on_all', state)
+        res: Set[ConType] = set()
+        self.block = True
+        if state == Qt.Unchecked:
+            for x in self.chk_lst:
+                x.setChecked(False)
+        elif state == Qt.PartiallyChecked:
+            for x in self.chk_lst:
+                x.setChecked(x.id in self.save_state)
+                if x.isChecked():
+                    res.add(x.id)
+        else:  # Qt.Checked
+            self.save_state: Set[ConType] = {x.id for x in self.chk_lst if x.checkState()}
+            xp('save_state', list(self.save_state))
+            for x in self.chk_lst:
+                x.setChecked(True)
+                res.add(x.id)
+        self.block = False
+        self.state_chg.emit(res)
+
+    def on_chk(self, name: ConType, state):
+        if self.block:
+            return
+        xp(f'CsSelector--{name.value}--{state}----------------')
+        xp('c.checkState', self.c.checkState())
+        with block_signals(self.c):
+            if self.c.checkState() != Qt.PartiallyChecked:
+                self.c.setCheckState(Qt.PartiallyChecked)
+        res: Set[ConType] = {x.id for x in self.chk_lst if x.checkState()}
+        self.state_chg.emit(res)
 
 
 class CsGui:
@@ -77,10 +172,13 @@ class CsGui:
         self.cons_cmb_box: QComboBox = QComboBox()
         self.cons_btn_del: QPushButton = QPushButton()
         self.cons_btn_ext: QPushButton = QPushButton()
+        self.cons_btn_tol: QPushButton = QPushButton()
         self.ext_toggle = True
         self.tab_cs.setLayout(self.lay_get())
         self.ctrl_up = None
         self.ctrl_lock = Lock()
+        self.tool_state: Set[ConType] = {x for x in ConType}
+        self.tool_wid = None
         self.update_table()
 
     @flow
@@ -100,10 +198,17 @@ class CsGui:
         self.cons_btn_ext.clicked.connect(self.on_cons_ext_btn_clk)
         self.cons_btn_ext.setText(u">")
         self.cons_btn_ext.setContentsMargins(0, 0, 0, 0)
+        self.cons_btn_tol.setIcon(QIcon(self.cs.tol))
+        self.cons_btn_tol.setContentsMargins(0, 0, 0, 0)
+        self.cons_btn_tol.setMinimumWidth(0)
+        self.cons_btn_tol.setMaximumWidth(50)
+        self.cons_btn_tol.clicked.connect(self.on_btn_tool_clk)
+
         # noinspection PyArgumentList
         li = [QVBoxLayout(), self.cons_grp_box,
               [QVBoxLayout(self.cons_grp_box),
-               [QHBoxLayout(), self.cons_lbl_con, self.cons_cmb_box, _QL.addStretch, self.cons_btn_del,
+               [QHBoxLayout(), self.cons_btn_tol, self.cons_cmb_box, _QL.addStretch, self.cons_btn_del,
+               # [QHBoxLayout(), self.cons_lbl_con, self.cons_cmb_box, _QL.addStretch, self.cons_btn_del,
                 self.cons_btn_ext],
                self.cons_tbl_wid]]
         return self.base.lay_get(li)
@@ -228,6 +333,30 @@ class CsGui:
     # ------------------------------------------------------------------------------
 
     @flow
+    @Slot()
+    def on_btn_tool_clk(self):
+        self.tool_wid: QWidget
+        if self.tool_wid and self.tool_wid.isVisible():
+            return
+        cs_list: List[Constraint] = self.cs.constraints
+        cs_set: Set[ConType] = {ConType(item.type_id) for item in cs_list}
+        wid = CsSelector(self.base, cs_set, self.tool_state)
+        wid.state_chg.connect(self.on_tool_sel)
+        pz: QPoint = self.base.mapToGlobal(QPoint(0, 0))
+        wid.show()
+        pz.setX(pz.x() - wid.width())
+        pz.setY(self.base.y())
+        wid.move(pz)
+        self.tool_wid = wid
+
+    @flow
+    @Slot(object)
+    def on_tool_sel(self, cs_set: Set[ConType]):
+        self.tool_state = cs_set
+        xp(list(cs_set))
+        self.update_table(typ=cs_set)
+
+    @flow
     @Slot(object)
     def on_tbl_ctx_menu(self, pos):
         xp('pos {} column {}'.format(pos, self.cons_tbl_wid.horizontalHeader().logicalIndexAt(pos)))
@@ -348,8 +477,9 @@ class CsGui:
     @flow
     def on_cons_type_cmb_chg(self, txt):
         ct: ConType = ConType(txt)
+        s = {ct}
         with Profile(enable=False):
-            self.update_table(typ=ct)
+            self.update_table(typ=s)
 
     @flow
     def on_cons_tbl_sel_chg(self):
@@ -467,6 +597,7 @@ class CsGui:
     def on_result_up(self, result, typ, id_lst):
         xp('on_result_up', result, typ, id_lst, **_cs)
         id_lst: List[int]
+        self.cons_btn_del.setDisabled(True)
         self.cons_tbl_wid.setUpdatesEnabled(False)
         self.cons_tbl_wid.setRowCount(0)
         __sorting_enabled = self.cons_tbl_wid.isSortingEnabled()
@@ -476,8 +607,8 @@ class CsGui:
         with block_signals(self.cons_tbl_wid):
             for idx, item in enumerate(cs_list):
                 xp('idx, item', idx, item, **_cs)
-                if (id_lst is None and (typ == ConType.ALL or typ == ConType(item.type_id))) \
-                        or (id_lst is not None and idx in id_lst):
+                if (id_lst is None and (ConType.ALL in typ or ConType(item.type_id) in typ)) or (id_lst is not None and idx in id_lst):
+                # if (id_lst is None and (typ == ConType.ALL or typ == ConType(item.type_id))) or (id_lst is not None and idx in id_lst):
                     self.cons_tbl_wid.insertRow(0)
                     w_item = QTableWidgetItem()
                     w_item.setData(Qt.UserRole, item)
@@ -558,7 +689,9 @@ class CsGui:
         return ' '.join(res_n), ' '.join(res_c), ' '.join(res_e)
 
     @flow
-    def update_table(self, typ=ConType.ALL, id_lst=None):
+    def update_table(self, typ=None, id_lst=None):
+        if typ is None:
+            typ = {ConType.ALL}
         ret = self.task_up(self.cs)
         self.on_result_up(ret, typ, id_lst)
         # self.ctrl_up = Controller(Worker(self.task_up, self.cs), self.on_result_up, 'Constraint', typ, id_lst)

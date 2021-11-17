@@ -146,6 +146,7 @@ class RdGui:
 
     @flow(short=True)
     def on_result_up(self, result):
+        self.rad_btn_create.setDisabled(True)
         self.rad_tbl_wid.setUpdatesEnabled(False)
         self.rad_tbl_wid.setRowCount(0)
         __sorting_enabled = self.rad_tbl_wid.isSortingEnabled()

@@ -188,6 +188,14 @@ def block_signals(obj: QObject):
     finally:
         obj.blockSignals(False)
 
+@contextmanager
+def block_var(obj: bool):
+    obj = True
+    try:
+        yield
+    finally:
+        obj = False
+
 
 def complement_color(rgb: str) -> str:
     s1 = rgb.replace('#', '0x')
